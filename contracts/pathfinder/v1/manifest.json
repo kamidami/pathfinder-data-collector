@@ -1,0 +1,49 @@
+{
+  "contract_version": "1",
+  "note": "Headers copied exactly from Pathfinder header-only templates. Required columns are empty because nullability cannot be derived safely from headers alone.",
+  "entities": [
+    {
+      "entity_type": "programs",
+      "template": "programs_template.csv",
+      "source_pathfinder_template": "programs_template.csv",
+      "columns": ["country_code", "university_name", "program_name", "degree_level", "field_category", "city", "language", "duration", "tuition_min", "tuition_max", "currency", "intake", "application_deadline", "grade_requirement", "english_requirement", "work_experience_requirement", "application_url", "program_url", "notes", "source_url", "last_verified_date", "source_confidence", "data_status"],
+      "required_columns": []
+    },
+    {
+      "entity_type": "scholarships",
+      "template": "scholarships_template.csv",
+      "source_pathfinder_template": "scholarships_template.csv",
+      "columns": ["name", "country_code", "eligible_nationalities", "degree_levels", "fields", "coverage_type", "coverage_amount", "currency", "deadline", "required_documents", "application_url", "scholarship_url", "notes", "source_url", "last_verified_date", "source_confidence", "data_status"],
+      "required_columns": []
+    },
+    {
+      "entity_type": "country_rules",
+      "template": "country_rules_template.csv",
+      "source_pathfinder_template": "country_rules_template.csv",
+      "columns": ["country_code", "language_notes", "work_rights_notes", "visa_readiness_notes", "proof_of_funds_notes", "application_system_notes", "source_url", "last_verified_date", "source_confidence", "data_status"],
+      "required_columns": []
+    },
+    {
+      "entity_type": "cost_profiles",
+      "template": "cost_profiles_template.csv",
+      "source_pathfinder_template": "cost_profiles_template.csv",
+      "columns": ["country_code", "currency", "tuition_min", "tuition_max", "living_cost_min_monthly", "living_cost_max_monthly", "proof_of_funds_min", "proof_of_funds_notes", "source_url", "last_verified_date", "source_confidence", "data_status"],
+      "required_columns": []
+    },
+    {
+      "entity_type": "source_records",
+      "template": "source_records_template.csv",
+      "source_pathfinder_template": "source_records_template.csv",
+      "columns": ["title", "source_type", "url", "publisher", "country_code", "related_entity_type", "related_entity_name", "last_verified_date", "confidence", "notes"],
+      "required_columns": []
+    },
+    {
+      "entity_type": "countries",
+      "template": "countries_template.csv",
+      "source_pathfinder_template": "countries_template.csv",
+      "columns": ["name", "code", "region", "official_study_portal_url", "notes", "data_status", "source_url", "last_verified_date", "source_confidence"],
+      "required_columns": []
+    }
+  ]
+}
+
