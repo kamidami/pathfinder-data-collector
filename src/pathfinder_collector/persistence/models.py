@@ -108,6 +108,24 @@ class SourcePageModel(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
 
 
+class CandidateSourceModel(Base):
+    __tablename__ = "candidate_sources"
+    __table_args__ = (
+        Index(
+            "ux_candidate_sources_candidate_source", "candidate_id", "source_page_id", unique=True
+        ),
+        Index("ix_candidate_sources_source", "source_page_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    candidate_id: Mapped[str] = mapped_column(
+        ForeignKey("candidate_records.id", ondelete="CASCADE")
+    )
+    source_page_id: Mapped[str] = mapped_column(ForeignKey("source_pages.id", ondelete="CASCADE"))
+    source_role: Mapped[str] = mapped_column(String(20))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+
+
 class EvidenceModel(Base):
     __tablename__ = "evidence_records"
     __table_args__ = (Index("ix_evidence_candidate_field", "candidate_id", "field_name"),)

@@ -22,6 +22,7 @@ from pathfinder_collector.fetching.hashing import sha256_bytes
 from pathfinder_collector.persistence.models import (
     CandidateModel,
     CandidateReviewModel,
+    CandidateSourceModel,
     ConflictModel,
     SourcePageModel,
 )
@@ -166,15 +167,22 @@ class CandidateReviewService:
     ) -> None:
         if candidate.source_page_id is None:
             raise ReviewValidationError("approval requires a source relationship")
-        source = self.session.get(SourcePageModel, candidate.source_page_id)
-        if source is None or not source.cached_file_path or not source.content_hash:
+        sources = self.session.scalars(
+            select(SourcePageModel)
+            .join(CandidateSourceModel, CandidateSourceModel.source_page_id == SourcePageModel.id)
+            .where(CandidateSourceModel.candidate_id == candidate.id)
+        ).all()
+        if not sources:
             raise ReviewValidationError("approval requires an intact cached source")
-        try:
-            content = Path(source.cached_file_path).read_bytes()
-        except OSError as exc:
-            raise ReviewValidationError("approval requires an intact cached source") from exc
-        if sha256_bytes(content) != source.content_hash:
-            raise ReviewValidationError("source cache hash does not match")
+        for source in sources:
+            if not source.cached_file_path or not source.content_hash:
+                raise ReviewValidationError("approval requires an intact cached source")
+            try:
+                content = Path(source.cached_file_path).read_bytes()
+            except OSError as exc:
+                raise ReviewValidationError("approval requires an intact cached source") from exc
+            if sha256_bytes(content) != source.content_hash:
+                raise ReviewValidationError("source cache hash does not match")
         unresolved = self.session.scalar(
             select(ConflictModel.id).where(
                 ConflictModel.candidate_id == candidate.id,

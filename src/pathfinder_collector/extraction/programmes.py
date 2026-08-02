@@ -96,7 +96,7 @@ class ProgrammeExtractor:
                 suggestion(
                     "program_name",
                     heading,
-                    heading,
+                    normalize_program_name(heading),
                     "h1[1]",
                     ConfidenceLevel.HIGH,
                     label="programme heading",
@@ -176,6 +176,16 @@ def normalize_degree(value: str) -> str | None:
     return None
 
 
+def normalize_program_name(value: str) -> str:
+    text = clean_text(value)
+    degree_token = (
+        r"(?:B\.?\s*Sc\.?|M\.?\s*Sc\.?|Bachelor(?: of Science)?|Master(?: of Science)?|Ph\.?D\.?)"
+    )
+    text = re.sub(rf"^{degree_token}\s*[-–—,:]?\s*", "", text, flags=re.I)
+    text = re.sub(rf"\s*[-–—,:]?\s*{degree_token}$", "", text, flags=re.I)
+    return clean_text(text) or clean_text(value)
+
+
 def normalize_language(value: str) -> str | None:
     lowered = clean_text(value).lower()
     english = "english" in lowered or "englisch" in lowered
@@ -245,7 +255,9 @@ def _label_suggestions(
                 _append(results, suggestion(name, value, normalized, locator, ConfidenceLevel.HIGH))
         return results
     normalized: str | None = value
-    if field == "degree_level":
+    if field == "program_name":
+        normalized = normalize_program_name(value)
+    elif field == "degree_level":
         normalized = normalize_degree(value)
     elif field == "teaching_language":
         normalized = normalize_language(value)
@@ -280,6 +292,8 @@ def _normalize_suggestions(items: list[FieldSuggestion], source_url: str) -> lis
                 replacement.priority = item.priority
             normalized.extend(replacements)
         elif item.field_name not in {"teaching_language", "duration"}:
+            if item.field_name == "program_name":
+                item.normalized_value = normalize_program_name(item.extracted_value)
             normalized.append(item)
     return normalized
 

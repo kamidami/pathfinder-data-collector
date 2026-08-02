@@ -22,6 +22,13 @@ from normalized data. A lower-priority contradiction is retained as evidence and
 Extraction-owned evidence and conflicts are replaced idempotently on rerun; human statuses and
 unrelated candidates are not overwritten.
 
+Supporting-page extraction requires an explicit existing candidate ID. Replacement is scoped to
+that source, so repeated processing neither duplicates evidence nor removes evidence from other
+sources. Agreeing values retain all evidence; two independent medium-confidence official sources
+deterministically raise the effective agreement confidence to high. Equally strong disagreement
+creates a conflict. The primary page remains the candidate's canonical `source_url`; a supporting
+URL is evidence and export provenance, not a silent replacement.
+
 A candidate becomes `collected` only when programme name, university, degree, teaching language,
 and source URL are present without conflicts or low-confidence values. Otherwise it becomes
 `needs_review`. Automatic extraction never approves, exports, or verifies a candidate.
@@ -29,4 +36,3 @@ and source URL are present without conflicts or low-confidence values. Otherwise
 The local review report escapes all untrusted text and includes no scripts, remote assets, raw
 HTML, response headers, or cache paths. Reports are ignored runtime artifacts and explicitly warn
 that human approval is required.
-

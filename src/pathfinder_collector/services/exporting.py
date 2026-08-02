@@ -18,6 +18,7 @@ from pathfinder_collector.enums import CandidateStatus, EntityType, ExportStatus
 from pathfinder_collector.fetching.hashing import sha256_bytes
 from pathfinder_collector.persistence.models import (
     CandidateModel,
+    CandidateSourceModel,
     ConflictModel,
     ExportCandidateModel,
     ExportFileModel,
@@ -86,7 +87,9 @@ class PathfinderExportService:
         if result.errors:
             return result
         program_rows = [self._program_row(candidate) for candidate in approved]
-        source_rows = _deduplicate_rows([self._source_row(candidate) for candidate in approved])
+        source_rows = _deduplicate_rows(
+            [row for candidate in approved for row in self._source_rows(candidate)]
+        )
         program_header = self.manifest.entity("programs").columns
         source_header = self.manifest.entity("source_records").columns
         _validate_rows(program_header, program_rows)
@@ -244,27 +247,35 @@ class PathfinderExportService:
         row["data_status"] = "collected"
         return {key: formula_safe(value) for key, value in row.items()}
 
-    def _source_row(self, candidate: CandidateModel) -> dict[str, str]:
+    def _source_rows(self, candidate: CandidateModel) -> list[dict[str, str]]:
         data = effective_candidate_data(candidate)
-        source = self.session.get(SourcePageModel, candidate.source_page_id)
-        row = {column: "" for column in self.manifest.entity("source_records").columns}
-        row.update(
-            {
-                "title": data.get("program_name", ""),
-                "source_type": source.source_type,
-                "url": _without_query(source.normalized_url),
-                "publisher": data.get("university_name", ""),
-                "country_code": data.get("country_code", ""),
-                "related_entity_type": "program",
-                "related_entity_name": data.get("program_name", ""),
-                "last_verified_date": candidate.approved_at.date().isoformat()
-                if candidate.approved_at
-                else "",
-                "confidence": "high",
-                "notes": "Human-reviewed collector record; not official verification.",
-            }
-        )
-        return {key: formula_safe(value) for key, value in row.items()}
+        sources = self.session.scalars(
+            select(SourcePageModel)
+            .join(CandidateSourceModel, CandidateSourceModel.source_page_id == SourcePageModel.id)
+            .where(CandidateSourceModel.candidate_id == candidate.id)
+            .order_by(CandidateSourceModel.created_at)
+        ).all()
+        rows: list[dict[str, str]] = []
+        for source in sources:
+            row = {column: "" for column in self.manifest.entity("source_records").columns}
+            row.update(
+                {
+                    "title": data.get("program_name", ""),
+                    "source_type": source.source_type,
+                    "url": _without_query(source.normalized_url),
+                    "publisher": data.get("university_name", ""),
+                    "country_code": data.get("country_code", ""),
+                    "related_entity_type": "program",
+                    "related_entity_name": data.get("program_name", ""),
+                    "last_verified_date": candidate.approved_at.date().isoformat()
+                    if candidate.approved_at
+                    else "",
+                    "confidence": "high",
+                    "notes": "Human-reviewed collector record; not official verification.",
+                }
+            )
+            rows.append({key: formula_safe(value) for key, value in row.items()})
+        return rows
 
 
 def duplicate_candidate_groups(candidates: list[CandidateModel]) -> list[list[CandidateModel]]:

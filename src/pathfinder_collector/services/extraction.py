@@ -67,7 +67,12 @@ class ProgrammeExtractionService:
         self.extractor = extractor or ProgrammeExtractor()
 
     def extract_source(
-        self, job_id: UUID, source_page_id: UUID, *, force: bool = False
+        self,
+        job_id: UUID,
+        source_page_id: UUID,
+        *,
+        force: bool = False,
+        candidate_id: UUID | None = None,
     ) -> ProgrammeExtractionResult:
         del force  # deterministic replacement is idempotent; retained for CLI/API compatibility.
         job = self.jobs.get(job_id)
@@ -108,22 +113,38 @@ class ProgrammeExtractionService:
                 warnings=output.warnings,
             )
 
-        existing = self.candidates.find_by_source(job_id, source_page_id)
+        attached = self.candidates.get(candidate_id) if candidate_id else None
+        if candidate_id and (attached is None or attached.job_id != job_id):
+            raise ValueError("supporting candidate does not exist or does not belong to the job")
+        existing = attached or self.candidates.find_by_source(job_id, source_page_id)
         candidate = existing or CandidateRecord(
             job_id=job_id,
             source_page_id=source_page_id,
             entity_type=EntityType.PROGRAM,
             schema_version="pathfinder-v1",
         )
-        normalized, conflicts_by_field, warnings = _resolve(output.suggestions)
-        warnings = output.warnings + warnings
+        records = [_evidence(candidate.id, source_page_id, item) for item in output.suggestions]
+        self.candidates.save(candidate)
+        self.candidates.attach_source(
+            candidate.id, source_page_id, "supporting" if candidate_id else "primary"
+        )
+        self.evidence.replace_for_source(candidate.id, source_page_id, EXTRACTION_VERSION, records)
+        all_records = self.evidence.evidence_for(candidate.id)
+        normalized, conflict_pairs, warnings = _resolve_records(
+            all_records, candidate.source_page_id
+        )
+        warnings = list(
+            dict.fromkeys([*candidate.extraction_warnings, *output.warnings, *warnings])
+        )
         missing = sorted(SUPPORTED_FIELDS - set(normalized))
         low_confidence = {
-            item.field_name for item in output.suggestions if item.confidence is ConfidenceLevel.LOW
+            item.field_name
+            for item in all_records
+            if item.confidence is ConfidenceLevel.LOW and item.field_name in CORE_FIELDS
         }
         review_status = (
             CandidateStatus.COLLECTED
-            if not (CORE_FIELDS - set(normalized)) and not conflicts_by_field and not low_confidence
+            if not (CORE_FIELDS - set(normalized)) and not conflict_pairs and not low_confidence
             else CandidateStatus.NEEDS_REVIEW
         )
         if candidate.review_status not in {
@@ -139,22 +160,17 @@ class ProgrammeExtractionService:
         candidate.extraction_warnings = warnings
         candidate.updated_at = now
         self.candidates.save(candidate)
-
-        records = [_evidence(candidate.id, source_page_id, item) for item in output.suggestions]
-        by_field: dict[str, list[EvidenceRecord]] = defaultdict(list)
-        for record in records:
-            by_field[record.field_name].append(record)
         conflicts = [
             ConflictRecord(
                 candidate_id=candidate.id,
                 field_name=field,
-                first_evidence_id=by_field[field][indexes[0]].id,
-                second_evidence_id=by_field[field][indexes[1]].id,
+                first_evidence_id=pair[0].id,
+                second_evidence_id=pair[1].id,
                 extraction_version=EXTRACTION_VERSION,
             )
-            for field, indexes in conflicts_by_field.items()
+            for field, pair in conflict_pairs.items()
         ]
-        self.evidence.replace(candidate.id, EXTRACTION_VERSION, records, conflicts)
+        self.evidence.replace_conflicts(candidate.id, EXTRACTION_VERSION, conflicts)
         status = (
             ExtractionStatus.EXTRACTED
             if review_status is CandidateStatus.COLLECTED
@@ -165,7 +181,7 @@ class ProgrammeExtractionService:
             candidate_id=candidate.id,
             fields_found=sorted(normalized),
             fields_missing=missing,
-            evidence_count=len(records),
+            evidence_count=len(all_records),
             conflicts_count=len(conflicts),
             warnings=warnings,
             extraction_status=status,
@@ -230,6 +246,70 @@ def _evidence(candidate_id: UUID, source_page_id: UUID, item: FieldSuggestion) -
         confidence=item.confidence,
         extraction_version=EXTRACTION_VERSION,
     )
+
+
+def agreement_confidence(records: list[EvidenceRecord]) -> ConfidenceLevel:
+    """Return deterministic confidence for agreeing evidence from independent sources."""
+    if not records:
+        return ConfidenceLevel.LOW
+    strongest = min(records, key=lambda item: _confidence_rank(item.confidence)).confidence
+    independent_sources = {item.source_page_id for item in records}
+    if strongest is ConfidenceLevel.MEDIUM and len(independent_sources) >= 2:
+        return ConfidenceLevel.HIGH
+    return strongest
+
+
+def _confidence_rank(confidence: ConfidenceLevel) -> int:
+    return {
+        ConfidenceLevel.HIGH: 0,
+        ConfidenceLevel.MEDIUM: 1,
+        ConfidenceLevel.LOW: 2,
+    }[confidence]
+
+
+def _resolve_records(
+    records: list[EvidenceRecord], primary_source_id: UUID | None
+) -> tuple[dict[str, str], dict[str, tuple[EvidenceRecord, EvidenceRecord]], list[str]]:
+    grouped: dict[str, list[EvidenceRecord]] = defaultdict(list)
+    for item in records:
+        if item.field_name in SUPPORTED_FIELDS:
+            grouped[item.field_name].append(item)
+    normalized: dict[str, str] = {}
+    conflicts: dict[str, tuple[EvidenceRecord, EvidenceRecord]] = {}
+    warnings: list[str] = []
+    for field, items in grouped.items():
+        if field == "source_url" and primary_source_id:
+            items = [item for item in items if item.source_page_id == primary_source_id] or items
+        values: dict[str, list[EvidenceRecord]] = defaultdict(list)
+        for item in items:
+            value = item.normalized_value or item.extracted_value
+            values[value.casefold()].append(item)
+        if len(values) == 1:
+            agreeing = next(iter(values.values()))
+            confidence = agreement_confidence(agreeing)
+            best = min(agreeing, key=lambda item: _confidence_rank(item.confidence))
+            if confidence is not ConfidenceLevel.LOW:
+                normalized[field] = best.normalized_value or best.extracted_value
+            continue
+        best_rank = min(_confidence_rank(item.confidence) for item in items)
+        strongest = [item for item in items if _confidence_rank(item.confidence) == best_rank]
+        strongest_values = {
+            (item.normalized_value or item.extracted_value).casefold() for item in strongest
+        }
+        if len(strongest_values) == 1:
+            best = strongest[0]
+            normalized[field] = best.normalized_value or best.extracted_value
+            warnings.append(f"Lower-confidence conflicting {field} evidence requires review")
+        else:
+            first = strongest[0]
+            second = next(
+                item
+                for item in strongest[1:]
+                if (item.normalized_value or item.extracted_value).casefold()
+                != (first.normalized_value or first.extracted_value).casefold()
+            )
+            conflicts[field] = (first, second)
+    return normalized, conflicts, warnings
 
 
 def _contract_aware_data(values: dict[str, str]) -> dict[str, str]:

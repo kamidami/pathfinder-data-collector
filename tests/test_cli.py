@@ -198,6 +198,10 @@ def test_programme_extraction_and_candidate_cli(
     assert shown.exit_code == 0
     assert "private=query" not in shown.stdout
     assert "Evidence confidence" in shown.stdout
+    blockers = runner.invoke(cli_with_settings, ["candidate", "blockers", candidate_id])
+    assert blockers.exit_code == 0, blockers.stdout
+    assert "Source integrity: ok" in blockers.stdout
+    assert "Blockers: -" in blockers.stdout
     reported = runner.invoke(cli_with_settings, ["candidate", "report", candidate_id])
     assert reported.exit_code == 0
     assert "var" not in reported.stdout or "reports" in reported.stdout

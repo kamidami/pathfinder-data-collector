@@ -35,3 +35,6 @@ Statuses mean:
 Conflict resolution remains deliberately limited: unresolved extraction conflicts block approval.
 Reviewers must return the candidate for correction rather than silently bypassing a conflict.
 
+Use `candidate blockers <candidate-id>` before review for bounded categories, missing and
+low-confidence core fields, conflicts, warnings, source integrity, and current export eligibility.
+Candidate reports distinguish the primary and supporting sources and attribute every evidence row.

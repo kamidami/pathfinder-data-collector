@@ -29,8 +29,10 @@ python -m pathfinder_collector job list
 python -m pathfinder_collector source fetch --job <job-uuid> --url https://example.edu/page --type official_program
 python -m pathfinder_collector source list --job <job-uuid>
 python -m pathfinder_collector program extract --job <job-uuid> --source <source-page-uuid>
+python -m pathfinder_collector program extract --job <job-uuid> --source <supporting-source-uuid> --candidate <candidate-uuid>
 python -m pathfinder_collector candidate list --job <job-uuid>
 python -m pathfinder_collector candidate show <candidate-uuid>
+python -m pathfinder_collector candidate blockers <candidate-uuid>
 python -m pathfinder_collector candidate report <candidate-uuid>
 python -m pathfinder_collector candidate review <candidate-uuid> --decision approve --reviewer local-1
 python -m pathfinder_collector candidate history <candidate-uuid>

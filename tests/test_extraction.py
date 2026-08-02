@@ -5,6 +5,7 @@ from pathfinder_collector.extraction.programmes import (
     normalize_degree,
     normalize_duration,
     normalize_language,
+    normalize_program_name,
     normalize_study_mode,
 )
 
@@ -27,7 +28,7 @@ def values(output: object, field: str) -> list[str]:
 
 def test_labelled_programme_fields_and_normalizers() -> None:
     output = extracted("programme_labelled.html")
-    assert values(output, "program_name") == ["Data Science M.Sc."]
+    assert values(output, "program_name") == ["Data Science"]
     assert "Example University" in values(output, "university_name")
     assert "master" in values(output, "degree_level")
     assert values(output, "teaching_language") == ["English and German"]
@@ -46,6 +47,7 @@ def test_controlled_normalizers() -> None:
     assert normalize_duration("2 years") == (2, "years", 4)
     assert normalize_duration("24 months") == (24, "months", None)
     assert normalize_duration("P24M") == (4, "semesters", 4)
+    assert normalize_program_name("M.Sc. Computer Science") == "Computer Science"
     assert normalize_study_mode("blended learning").value == "hybrid"
 
 
@@ -89,6 +91,7 @@ def test_generic_cards_inline_lines_adjacent_degree_and_institution_metadata() -
     assert "Example University" in values(output, "university_name")
     assert values(output, "country_code") == ["DE"]
     assert "English" in values(output, "teaching_language")
+    assert any(item.evidence_locator.startswith("labelled-inline") for item in output.suggestions)
     assert "full_time" in values(output, "study_mode")
     assert "Example City" in values(output, "city")
     assert "4" in values(output, "duration_semesters")

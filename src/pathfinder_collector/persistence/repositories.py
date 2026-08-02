@@ -15,6 +15,7 @@ from pathfinder_collector.enums import (
 )
 from pathfinder_collector.persistence.models import (
     CandidateModel,
+    CandidateSourceModel,
     ConflictModel,
     EvidenceModel,
     JobModel,
@@ -221,6 +222,36 @@ class CandidateRepository:
         ).all()
         return [self._domain(row) for row in rows]
 
+    def attach_source(self, candidate_id: object, source_page_id: object, role: str) -> None:
+        if role not in {"primary", "supporting"}:
+            raise ValueError("source role must be primary or supporting")
+        existing = self.session.scalar(
+            select(CandidateSourceModel).where(
+                CandidateSourceModel.candidate_id == str(candidate_id),
+                CandidateSourceModel.source_page_id == str(source_page_id),
+            )
+        )
+        if existing is None:
+            self.session.add(
+                CandidateSourceModel(
+                    candidate_id=str(candidate_id),
+                    source_page_id=str(source_page_id),
+                    source_role=role,
+                )
+            )
+        elif existing.source_role != "primary":
+            existing.source_role = role
+        self.session.commit()
+
+    def sources_for(self, candidate_id: object) -> list[tuple[SourcePage, str]]:
+        rows = self.session.execute(
+            select(SourcePageModel, CandidateSourceModel.source_role)
+            .join(CandidateSourceModel, CandidateSourceModel.source_page_id == SourcePageModel.id)
+            .where(CandidateSourceModel.candidate_id == str(candidate_id))
+            .order_by(CandidateSourceModel.created_at)
+        ).all()
+        return [(SourcePageRepository._domain(row), role) for row, role in rows]
+
     def save(self, candidate: CandidateRecord) -> CandidateRecord:
         row = self.session.get(CandidateModel, str(candidate.id))
         if row is None:
@@ -244,6 +275,8 @@ class CandidateRepository:
         for name, value in values.items():
             setattr(row, name, value)
         self.session.commit()
+        if candidate.source_page_id:
+            self.attach_source(candidate.id, candidate.source_page_id, "primary")
         return candidate
 
     @staticmethod
@@ -305,6 +338,69 @@ class ExtractionEvidenceRepository:
                 )
             )
         self.session.flush()
+        for item in conflicts:
+            self.session.add(
+                ConflictModel(
+                    id=str(item.id),
+                    candidate_id=str(item.candidate_id),
+                    field_name=item.field_name,
+                    first_evidence_id=str(item.first_evidence_id),
+                    second_evidence_id=str(item.second_evidence_id),
+                    resolution_status=item.resolution_status.value,
+                    resolved_value=item.resolved_value,
+                    created_at=item.created_at,
+                    resolved_at=item.resolved_at,
+                    extraction_version=item.extraction_version,
+                )
+            )
+        self.session.commit()
+
+    def replace_for_source(
+        self,
+        candidate_id: object,
+        source_page_id: object,
+        version: str,
+        evidence: list[EvidenceRecord],
+    ) -> None:
+        evidence_ids = select(EvidenceModel.id).where(
+            EvidenceModel.candidate_id == str(candidate_id),
+            EvidenceModel.source_page_id == str(source_page_id),
+            EvidenceModel.extraction_version == version,
+        )
+        self.session.execute(
+            delete(ConflictModel).where(
+                ConflictModel.candidate_id == str(candidate_id),
+                ConflictModel.extraction_version == version,
+            )
+        )
+        self.session.execute(delete(EvidenceModel).where(EvidenceModel.id.in_(evidence_ids)))
+        for item in evidence:
+            self.session.add(
+                EvidenceModel(
+                    id=str(item.id),
+                    candidate_id=str(item.candidate_id),
+                    source_page_id=str(item.source_page_id),
+                    field_name=item.field_name,
+                    extracted_value=item.extracted_value,
+                    normalized_value=item.normalized_value,
+                    evidence_locator=item.evidence_locator,
+                    short_evidence_text=item.short_evidence_text,
+                    confidence=item.confidence.value,
+                    extraction_version=item.extraction_version,
+                    created_at=item.created_at,
+                )
+            )
+        self.session.commit()
+
+    def replace_conflicts(
+        self, candidate_id: object, version: str, conflicts: list[ConflictRecord]
+    ) -> None:
+        self.session.execute(
+            delete(ConflictModel).where(
+                ConflictModel.candidate_id == str(candidate_id),
+                ConflictModel.extraction_version == version,
+            )
+        )
         for item in conflicts:
             self.session.add(
                 ConflictModel(

@@ -14,6 +14,7 @@ from pathfinder_collector.persistence.repositories import (
     ExtractionEvidenceRepository,
     SourcePageRepository,
 )
+from pathfinder_collector.services.blockers import CandidateBlockerService
 from pathfinder_collector.services.extraction import SUPPORTED_FIELDS
 
 
@@ -50,15 +51,14 @@ class CandidateReportService:
             .order_by(ExportRunModel.created_at)
             .all()
         )
-        source = next(
-            (
-                item
-                for item in self.sources.list_for_job(candidate.job_id)
-                if item.id == candidate.source_page_id
-            ),
-            None,
+        candidate_sources = self.candidates.sources_for(candidate_id)
+        source_by_id = {str(item.id): item for item, _role in candidate_sources}
+        source_items = "".join(
+            _source_list_item(item.normalized_url, role) for item, role in candidate_sources
         )
-        source_url = str(source.normalized_url).split("?", 1)[0] if source else ""
+        blocker_result = CandidateBlockerService(self.candidates, self.evidence).analyze(
+            candidate_id
+        )
         effective_data = {**candidate.normalized_data, **candidate.reviewer_overrides}
         missing = sorted(SUPPORTED_FIELDS - {key for key, value in effective_data.items() if value})
         extraction_values = "".join(
@@ -75,12 +75,25 @@ class CandidateReportService:
             f"<td>{escape(item.extracted_value)}</td>"
             f"<td>{escape(item.normalized_value or '')}</td>"
             f"<td>{escape(item.confidence.value)}</td>"
+            f"<td>{escape(_evidence_source_url(source_by_id, item.source_page_id))}</td>"
             f"<td>{escape(item.evidence_locator or '')}</td>"
             f"<td>{escape(item.short_evidence_text or '')}</td>"
             "</tr>"
             for item in evidence
         )
         conflict_items = "".join(f"<li>{escape(item.field_name)}</li>" for item in conflicts)
+        conflict_fields = {item.field_name for item in conflicts}
+        field_sources: dict[str, set[str]] = {}
+        field_values: dict[str, set[str]] = {}
+        for item in evidence:
+            field_sources.setdefault(item.field_name, set()).add(str(item.source_page_id))
+            value = item.normalized_value or item.extracted_value
+            field_values.setdefault(item.field_name, set()).add(value.casefold())
+        agreement_items = "".join(
+            f"<li>{escape(field)}: "
+            f"{escape(_agreement_state(field, sources, field_values[field], conflict_fields))}</li>"
+            for field, sources in sorted(field_sources.items())
+        )
         review_items = "".join(
             f"<li>{escape(item.reviewed_at.isoformat())}: {escape(item.decision)} by "
             f"{escape(item.reviewer_label)} → {escape(item.resulting_status)}; "
@@ -94,6 +107,7 @@ class CandidateReportService:
             for item in exports
         )
         missing_items = "".join(f"<li>{escape(item)}</li>" for item in missing)
+        blocker_items = "".join(f"<li>{escape(item)}</li>" for item in blocker_result.categories)
         generated = datetime.now(UTC).isoformat()
         document = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Candidate review</title>
@@ -105,19 +119,46 @@ th,td{{border:1px solid #bbb;padding:.45rem;text-align:left}}
 <p class="warning">Human-approved values are not verified;
 local review is not official source verification.</p>
 <p>Candidate: {escape(str(candidate.id))}<br>Status: {escape(candidate.review_status.value)}<br>
-Generated: {escape(generated)}<br>Source:
-<a href="{escape(source_url, quote=True)}">{escape(source_url)}</a></p>
+Generated: {escape(generated)}<br>Export eligible:
+{escape("yes" if blocker_result.export_eligible else "no")}</p>
+<h2>Sources</h2><ul>{source_items}</ul>
 <h2>Extraction values</h2><table>{extraction_values}</table>
 <h2>Effective values after reviewer overrides</h2><table>{effective_values}</table>
 <h2>Missing fields</h2><ul>{missing_items}</ul>
+<h2>Approval blockers</h2><ul>{blocker_items}</ul>
 <h2>Conflicts</h2><ul>{conflict_items}</ul>
+<h2>Evidence agreement</h2><ul>{agreement_items}</ul>
 <h2>Review history</h2><ul>{review_items}</ul>
 <h2>Export history</h2><ul>{export_items}</ul>
 <h2>Evidence</h2><table><tr><th>Field</th><th>Extracted</th><th>Normalized</th>
-<th>Confidence</th><th>Locator</th><th>Excerpt</th></tr>{evidence_rows}</table></body></html>"""
+<th>Confidence</th><th>Source</th><th>Locator</th><th>Excerpt</th></tr>{evidence_rows}</table></body></html>"""
         path = self.settings.report_dir / "candidates" / f"{candidate.id}.html"
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_suffix(".tmp")
         temporary.write_text(document, encoding="utf-8")
         temporary.replace(path)
         return path
+
+
+def _evidence_source_url(source_by_id: dict[str, object], source_page_id: object) -> str:
+    source = source_by_id.get(str(source_page_id))
+    normalized_url = getattr(source, "normalized_url", "")
+    return str(normalized_url).split("?", 1)[0]
+
+
+def _source_list_item(url: object, role: str) -> str:
+    safe_url = str(url).split("?", 1)[0]
+    return (
+        f'<li>{escape(role.title())}: <a href="{escape(safe_url, quote=True)}">'
+        f"{escape(safe_url)}</a></li>"
+    )
+
+
+def _agreement_state(
+    field: str, source_ids: set[str], values: set[str], conflict_fields: set[str]
+) -> str:
+    if field in conflict_fields:
+        return "conflict"
+    if len(source_ids) > 1 and len(values) == 1:
+        return "agreement across official sources"
+    return "single-source or complementary evidence"

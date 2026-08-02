@@ -49,6 +49,11 @@ def labelled_values(document: HtmlElement) -> Iterator[LabelledValue]:
             yield LabelledValue(label, value, f"labelled-card:{label}")
     for label_node in document.xpath("//p/strong")[:500]:
         label = clean_text(label_node.text_content(), 200).rstrip(":")
+        inline_value = clean_text("".join(label_node.xpath("following-sibling::text()"))).lstrip(
+            ": "
+        )
+        if label and inline_value:
+            yield LabelledValue(label, inline_value, f"labelled-inline:{label}")
         following = label_node.getparent().xpath("following-sibling::*[1]")
         if label and following:
             value = clean_text(following[0].text_content())

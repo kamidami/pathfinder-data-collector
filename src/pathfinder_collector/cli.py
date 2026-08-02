@@ -229,6 +229,9 @@ def program_extract(
     job: UUID = typer.Option(..., help="Programme collection job UUID."),
     source: UUID = typer.Option(..., help="Fetched source-page UUID."),
     force: bool = typer.Option(False, help="Re-run deterministic extraction."),
+    candidate: UUID | None = typer.Option(
+        None, help="Existing candidate UUID when this is an official supporting page."
+    ),
 ) -> None:
     config = settings()
     engine = create_collector_engine(config.database_url)
@@ -239,7 +242,7 @@ def program_extract(
                 SourcePageRepository(session),
                 CandidateRepository(session),
                 ExtractionEvidenceRepository(session),
-            ).extract_source(job, source, force=force)
+            ).extract_source(job, source, force=force, candidate_id=candidate)
     except ValueError as exc:
         typer.echo(f"Extraction rejected: {exc}", err=True)
         raise typer.Exit(2) from exc
@@ -427,6 +430,33 @@ def candidate_duplicates(job: UUID = typer.Option(..., help="Collection job UUID
         return
     for index, group in enumerate(groups, start=1):
         typer.echo(f"Duplicate group {index}: {', '.join(item.id for item in group)}")
+
+
+@candidate_app.command("blockers")
+def candidate_blockers(candidate_id: UUID) -> None:
+    from pathfinder_collector.services.blockers import CandidateBlockerService
+
+    config = settings()
+    engine = create_collector_engine(config.database_url)
+    try:
+        with session_scope(engine) as session:
+            result = CandidateBlockerService(
+                CandidateRepository(session), ExtractionEvidenceRepository(session)
+            ).analyze(candidate_id)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    finally:
+        engine.dispose()
+    typer.echo(f"Candidate: {result.candidate_id}")
+    typer.echo(f"Status: {result.status.value}")
+    typer.echo(f"Missing core: {', '.join(result.missing_core_fields) or '-'}")
+    typer.echo(f"Low-confidence core: {', '.join(result.low_confidence_core_fields) or '-'}")
+    typer.echo(f"Conflicts: {', '.join(result.unresolved_conflicts) or '-'}")
+    typer.echo(f"Warnings: {len(result.warnings)}")
+    typer.echo(f"Source integrity: {result.source_integrity}")
+    typer.echo(f"Export eligible: {'yes' if result.export_eligible else 'no'}")
+    typer.echo(f"Blockers: {', '.join(result.categories) or '-'}")
 
 
 @candidate_app.command("review-interactive")

@@ -32,3 +32,6 @@ manifest and validation report, then use Pathfinder's normal administrator CSV i
 upload `programs.csv` and `source_records.csv` in the order required by that admin workflow. Do
 not copy files into Pathfinder internals or write its database directly.
 
+For an approved multi-source candidate, `source_records.csv` contains one deduplicated row per
+attached official source. `programs.csv` retains the primary canonical source URL. Neither file
+contains evidence excerpts or local cache locations.
