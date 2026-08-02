@@ -1,6 +1,6 @@
 from typing import Protocol, TypeVar
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
 from pathfinder_collector.domain.candidates import CandidateRecord
@@ -362,19 +362,32 @@ class ExtractionEvidenceRepository:
         version: str,
         evidence: list[EvidenceRecord],
     ) -> None:
-        evidence_ids = select(EvidenceModel.id).where(
-            EvidenceModel.candidate_id == str(candidate_id),
-            EvidenceModel.source_page_id == str(source_page_id),
-            EvidenceModel.extraction_version == version,
-        )
-        self.session.execute(
-            delete(ConflictModel).where(
-                ConflictModel.candidate_id == str(candidate_id),
-                ConflictModel.extraction_version == version,
+        existing = self.session.scalars(
+            select(EvidenceModel).where(
+                EvidenceModel.candidate_id == str(candidate_id),
+                EvidenceModel.source_page_id == str(source_page_id),
+                EvidenceModel.extraction_version == version,
             )
-        )
-        self.session.execute(delete(EvidenceModel).where(EvidenceModel.id.in_(evidence_ids)))
-        for item in evidence:
+        ).all()
+        existing_by_key = {_evidence_key(item): item for item in existing}
+        incoming_by_key = {_evidence_key(item): item for item in evidence}
+        obsolete_ids = [
+            item.id for key, item in existing_by_key.items() if key not in incoming_by_key
+        ]
+        if obsolete_ids:
+            self.session.execute(
+                delete(ConflictModel).where(
+                    ConflictModel.candidate_id == str(candidate_id),
+                    or_(
+                        ConflictModel.first_evidence_id.in_(obsolete_ids),
+                        ConflictModel.second_evidence_id.in_(obsolete_ids),
+                    ),
+                )
+            )
+            self.session.execute(delete(EvidenceModel).where(EvidenceModel.id.in_(obsolete_ids)))
+        for key, item in incoming_by_key.items():
+            if key in existing_by_key:
+                continue
             self.session.add(
                 EvidenceModel(
                     id=str(item.id),
@@ -395,13 +408,29 @@ class ExtractionEvidenceRepository:
     def replace_conflicts(
         self, candidate_id: object, version: str, conflicts: list[ConflictRecord]
     ) -> None:
-        self.session.execute(
-            delete(ConflictModel).where(
+        existing = self.session.scalars(
+            select(ConflictModel).where(
                 ConflictModel.candidate_id == str(candidate_id),
                 ConflictModel.extraction_version == version,
             )
-        )
-        for item in conflicts:
+        ).all()
+        existing_by_key = {
+            (item.field_name, frozenset((item.first_evidence_id, item.second_evidence_id))): item
+            for item in existing
+        }
+        incoming_by_key = {
+            (
+                item.field_name,
+                frozenset((str(item.first_evidence_id), str(item.second_evidence_id))),
+            ): item
+            for item in conflicts
+        }
+        obsolete = [item.id for key, item in existing_by_key.items() if key not in incoming_by_key]
+        if obsolete:
+            self.session.execute(delete(ConflictModel).where(ConflictModel.id.in_(obsolete)))
+        for key, item in incoming_by_key.items():
+            if key in existing_by_key:
+                continue
             self.session.add(
                 ConflictModel(
                     id=str(item.id),
@@ -462,3 +491,14 @@ class ExtractionEvidenceRepository:
             )
             for row in rows
         ]
+
+
+def _evidence_key(item: EvidenceModel | EvidenceRecord) -> tuple[str, str, str, str, str]:
+    confidence = item.confidence.value if hasattr(item.confidence, "value") else item.confidence
+    return (
+        item.field_name,
+        item.extracted_value,
+        item.normalized_value or "",
+        item.evidence_locator or "",
+        str(confidence),
+    )

@@ -27,3 +27,8 @@ cross-source conflicts. It never discovers pages or creates a second candidate i
 Human review is a transactional service boundary with append-only decisions and separately stored
 overrides. Export validation maps effective approved programme values into copied Pathfinder v1
 contracts, writes atomic ignored packages, and records immutable run/file/candidate history.
+
+Operator job context is stored separately in `candidate_context_values`; it is never represented
+as SourcePage evidence. `context_conflicts` blocks context contradicted by official evidence.
+Explicit evidence-conflict decisions update only effective reviewer overrides while append-only
+`conflict_resolutions` records retain the reviewer, action, selected value, reason, and timestamp.

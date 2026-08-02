@@ -2,6 +2,7 @@ from pathlib import Path
 from uuid import UUID
 
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 
 from pathfinder_collector.domain.evidence import SourcePage
 from pathfinder_collector.enums import (
@@ -11,6 +12,7 @@ from pathfinder_collector.enums import (
     ResolutionStatus,
 )
 from pathfinder_collector.fetching.hashing import sha256_bytes
+from pathfinder_collector.persistence.models import ContextConflictModel
 from pathfinder_collector.persistence.repositories import (
     CandidateRepository,
     ExtractionEvidenceRepository,
@@ -42,7 +44,7 @@ class CandidateBlockerService:
         candidate = self.candidates.get(candidate_id)
         if candidate is None:
             raise ValueError("candidate does not exist")
-        effective = effective_candidate_data(candidate)
+        effective = effective_candidate_data(candidate, self.evidence.session)
         missing = sorted(
             field for field in APPROVAL_CORE_FIELDS if not str(effective.get(field, "")).strip()
         )
@@ -57,6 +59,15 @@ class CandidateBlockerService:
             for item in self.evidence.conflicts_for(candidate_id)
             if item.resolution_status is ResolutionStatus.UNRESOLVED
         )
+        context_conflicts = list(
+            self.evidence.session.scalars(
+                select(ContextConflictModel.field_name).where(
+                    ContextConflictModel.candidate_id == str(candidate_id),
+                    ContextConflictModel.resolution_status == ResolutionStatus.UNRESOLVED.value,
+                )
+            ).all()
+        )
+        conflicts = sorted(set(conflicts + context_conflicts))
         integrity = self._source_integrity(candidate_id)
         categories: list[str] = []
         categories.extend(f"missing_{field}" for field in missing)
@@ -69,13 +80,14 @@ class CandidateBlockerService:
         if integrity != "ok":
             categories.append("cache_integrity")
         categories = list(dict.fromkeys(categories))
+        blocking_categories = [item for item in categories if item != "extraction_warning"]
         eligible = (
             candidate.review_status
             in {
                 CandidateStatus.APPROVED,
                 CandidateStatus.EXPORTED,
             }
-            and not categories
+            and not blocking_categories
         )
         return CandidateBlockers(
             candidate_id=candidate.id,

@@ -419,7 +419,7 @@ def candidate_duplicates(job: UUID = typer.Option(..., help="Collection job UUID
                     select(CandidateModel).where(CandidateModel.job_id == str(job))
                 ).all()
             )
-            groups = duplicate_candidate_groups(candidates)
+            groups = duplicate_candidate_groups(candidates, session)
     except ValueError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(2) from exc
@@ -457,6 +457,103 @@ def candidate_blockers(candidate_id: UUID) -> None:
     typer.echo(f"Source integrity: {result.source_integrity}")
     typer.echo(f"Export eligible: {'yes' if result.export_eligible else 'no'}")
     typer.echo(f"Blockers: {', '.join(result.categories) or '-'}")
+
+
+@candidate_app.command("context")
+def candidate_context(
+    candidate_id: UUID,
+    apply_job_country: bool = typer.Option(
+        False, help="Explicitly apply the candidate job's country context."
+    ),
+) -> None:
+    from pathfinder_collector.services.context import CandidateContextService
+
+    config = settings()
+    engine = create_collector_engine(config.database_url)
+    try:
+        with session_scope(engine) as session:
+            service = CandidateContextService(session)
+            result = (
+                service.apply_job_country(candidate_id)
+                if apply_job_country
+                else service.summary(candidate_id)
+            )
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    finally:
+        engine.dispose()
+    typer.echo(f"Candidate: {result.candidate_id}")
+    typer.echo(f"Job country: {result.job_country}")
+    typer.echo(f"Effective country: {result.effective_country or '-'}")
+    provenance = "job context" if result.provenance == "operator_job_context" else "-"
+    typer.echo(f"Provenance: {provenance}")
+    typer.echo(f"Source contradictions: {', '.join(result.source_contradictions) or '-'}")
+    typer.echo(f"Approval eligible: {'yes' if result.approval_eligible else 'no'}")
+
+
+@candidate_app.command("conflict-list")
+def candidate_conflict_list(candidate_id: UUID) -> None:
+    from pathfinder_collector.services.conflicts import ConflictResolutionService
+
+    config = settings()
+    engine = create_collector_engine(config.database_url)
+    try:
+        with session_scope(engine) as session:
+            items = ConflictResolutionService(session).list_for_candidate(candidate_id)
+    finally:
+        engine.dispose()
+    if not items:
+        typer.echo("No evidence conflicts.")
+        return
+    for item in items:
+        typer.echo(
+            f"{item.id}  {item.field_name}  {item.status.value}  "
+            f"first={item.first_value[:120]}  second={item.second_value[:120]}  "
+            f"selected={(item.resolved_value or '-')[:120]}"
+        )
+
+
+@candidate_app.command("conflict-resolve")
+def candidate_conflict_resolve(
+    conflict_id: UUID,
+    resolution: str = typer.Option(..., help="Controlled conflict resolution."),
+    reviewer: str = typer.Option(..., help="Short local operator label."),
+    notes: str = typer.Option(..., help="Required bounded resolution reason."),
+    overrides: Path | None = typer.Option(None, help="Controlled JSON override file."),
+) -> None:
+    from pathfinder_collector.enums import ConflictResolutionAction
+    from pathfinder_collector.services.conflicts import ConflictResolutionService
+
+    aliases = {
+        "select-first": "select_first",
+        "select-second": "select_second",
+        "clear-optional": "clear_optional_field",
+        "override": "reviewer_override",
+        "keep-unresolved": "keep_unresolved",
+    }
+    try:
+        action = ConflictResolutionAction(aliases.get(resolution, resolution))
+    except ValueError as exc:
+        typer.echo("unsupported conflict resolution", err=True)
+        raise typer.Exit(2) from exc
+    config = settings()
+    override_values = _load_override_file(overrides, config) if overrides else {}
+    engine = create_collector_engine(config.database_url)
+    try:
+        with session_scope(engine) as session:
+            result = ConflictResolutionService(session).resolve(
+                conflict_id, action, reviewer, notes, override_values
+            )
+    except ValueError as exc:
+        typer.echo(f"Conflict resolution rejected: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    finally:
+        engine.dispose()
+    typer.echo(f"Conflict: {result.id}")
+    typer.echo(f"Field: {result.field_name}")
+    typer.echo(f"Status: {result.status.value}")
+    typer.echo(f"Selected: {result.resolved_value if result.resolved_value is not None else '-'}")
 
 
 @candidate_app.command("review-interactive")

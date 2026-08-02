@@ -5,7 +5,10 @@ from uuid import UUID
 
 from pathfinder_collector.config import Settings
 from pathfinder_collector.persistence.models import (
+    CandidateContextModel,
+    CandidateModel,
     CandidateReviewModel,
+    ConflictResolutionModel,
     ExportCandidateModel,
     ExportRunModel,
 )
@@ -16,6 +19,7 @@ from pathfinder_collector.persistence.repositories import (
 )
 from pathfinder_collector.services.blockers import CandidateBlockerService
 from pathfinder_collector.services.extraction import SUPPORTED_FIELDS
+from pathfinder_collector.services.review import effective_candidate_data
 
 
 class CandidateReportService:
@@ -51,6 +55,18 @@ class CandidateReportService:
             .order_by(ExportRunModel.created_at)
             .all()
         )
+        contexts = (
+            session.query(CandidateContextModel)
+            .filter_by(candidate_id=str(candidate_id))
+            .order_by(CandidateContextModel.created_at)
+            .all()
+        )
+        resolution_history = (
+            session.query(ConflictResolutionModel)
+            .filter_by(candidate_id=str(candidate_id))
+            .order_by(ConflictResolutionModel.reviewed_at)
+            .all()
+        )
         candidate_sources = self.candidates.sources_for(candidate_id)
         source_by_id = {str(item.id): item for item, _role in candidate_sources}
         source_items = "".join(
@@ -59,7 +75,8 @@ class CandidateReportService:
         blocker_result = CandidateBlockerService(self.candidates, self.evidence).analyze(
             candidate_id
         )
-        effective_data = {**candidate.normalized_data, **candidate.reviewer_overrides}
+        candidate_model = session.get(CandidateModel, str(candidate_id))
+        effective_data = effective_candidate_data(candidate_model, session)
         missing = sorted(SUPPORTED_FIELDS - {key for key, value in effective_data.items() if value})
         extraction_values = "".join(
             f"<tr><th>{escape(str(key))}</th><td>{escape(str(value))}</td></tr>"
@@ -81,7 +98,17 @@ class CandidateReportService:
             "</tr>"
             for item in evidence
         )
-        conflict_items = "".join(f"<li>{escape(item.field_name)}</li>" for item in conflicts)
+        unresolved_items = "".join(
+            f"<li>{escape(item.field_name)}</li>"
+            for item in conflicts
+            if item.resolution_status.value == "unresolved"
+        )
+        resolved_items = "".join(
+            f"<li>{escape(item.field_name)}: "
+            f"selected={escape(item.resolved_value or '(blank)')}</li>"
+            for item in conflicts
+            if item.resolution_status.value == "resolved"
+        )
         conflict_fields = {item.field_name for item in conflicts}
         field_sources: dict[str, set[str]] = {}
         field_values: dict[str, set[str]] = {}
@@ -100,6 +127,22 @@ class CandidateReportService:
             f"fields={escape(', '.join((item.field_overrides or {}).keys()) or '-')}; "
             f"notes={escape(item.review_notes or '-')}</li>"
             for item in reviews
+        )
+        context_items = "".join(
+            f"<li>{escape(item.field_name)} = {escape(item.value)}; provenance=job context; "
+            f"effective={escape('yes' if item.effective else 'no')}</li>"
+            for item in contexts
+        )
+        override_items = "".join(
+            f"<li>{escape(field)} = {escape(value or '(blank)')}</li>"
+            for field, value in sorted(candidate.reviewer_overrides.items())
+        )
+        resolution_items = "".join(
+            f"<li>{escape(item.reviewed_at.isoformat())}: {escape(item.field_name)}; "
+            f"{escape(item.resolution_action)} by {escape(item.reviewer_label)}; "
+            f"selected={escape(item.selected_value if item.selected_value is not None else '-')}; "
+            f"notes={escape(item.review_notes)}</li>"
+            for item in resolution_history
         )
         export_items = "".join(
             f"<li>{escape(item.created_at.isoformat())}: {escape(item.id)} "
@@ -123,10 +166,14 @@ Generated: {escape(generated)}<br>Export eligible:
 {escape("yes" if blocker_result.export_eligible else "no")}</p>
 <h2>Sources</h2><ul>{source_items}</ul>
 <h2>Extraction values</h2><table>{extraction_values}</table>
-<h2>Effective values after reviewer overrides</h2><table>{effective_values}</table>
+<h2>Operator context values</h2><ul>{context_items}</ul>
+<h2>Reviewer overrides</h2><ul>{override_items}</ul>
+<h2>Effective values</h2><table>{effective_values}</table>
 <h2>Missing fields</h2><ul>{missing_items}</ul>
 <h2>Approval blockers</h2><ul>{blocker_items}</ul>
-<h2>Conflicts</h2><ul>{conflict_items}</ul>
+<h2>Unresolved conflicts</h2><ul>{unresolved_items}</ul>
+<h2>Resolved conflicts</h2><ul>{resolved_items}</ul>
+<h2>Conflict resolution history</h2><ul>{resolution_items}</ul>
 <h2>Evidence agreement</h2><ul>{agreement_items}</ul>
 <h2>Review history</h2><ul>{review_items}</ul>
 <h2>Export history</h2><ul>{export_items}</ul>

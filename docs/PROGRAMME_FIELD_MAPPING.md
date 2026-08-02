@@ -6,7 +6,7 @@ The deterministic extractor supports only the following initial fields.
 |---|---|---|
 | `program_name` | `program_name` | Explicit heading, label, or programme JSON-LD |
 | `university_name` | `university_name` | Provider, explicit label, or site-name metadata |
-| `country_code` | `country_code` | Explicit country evidence only |
+| `country_code` | `country_code` | Explicit source evidence or separately attributed operator job context |
 | `city` | `city` | Explicit programme location/campus label only |
 | `degree_level` | `degree_level` | Controlled bachelor/master/phd normalization |
 | `field_category` | `field_category` | Explicit subject/field label only |
@@ -28,3 +28,7 @@ while `data_status` remains conservatively `collected`, never `verified`.
 
 Tuition, deadlines, requirements, test scores, documents, scholarships, and unlisted fields are
 unsupported in this phase and remain blank. Missing values are never guessed.
+
+The six approval-core fields are `program_name`, `university_name`, `country_code`,
+`degree_level`, `teaching_language`, and `source_url`. City, study mode, intake, duration, and
+field category are optional. Job country context never creates a SourcePage or source-record row.

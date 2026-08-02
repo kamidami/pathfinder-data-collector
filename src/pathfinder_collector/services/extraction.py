@@ -142,17 +142,7 @@ class ProgrammeExtractionService:
             for item in all_records
             if item.confidence is ConfidenceLevel.LOW and item.field_name in CORE_FIELDS
         }
-        review_status = (
-            CandidateStatus.COLLECTED
-            if not (CORE_FIELDS - set(normalized)) and not conflict_pairs and not low_confidence
-            else CandidateStatus.NEEDS_REVIEW
-        )
-        if candidate.review_status not in {
-            CandidateStatus.APPROVED,
-            CandidateStatus.REJECTED,
-            CandidateStatus.EXPORTED,
-        }:
-            candidate.review_status = review_status
+        review_status = CandidateStatus.NEEDS_REVIEW
         now = datetime.now(UTC)
         candidate.normalized_data = _contract_aware_data(normalized)
         candidate.extraction_version = EXTRACTION_VERSION
@@ -171,6 +161,26 @@ class ProgrammeExtractionService:
             for field, pair in conflict_pairs.items()
         ]
         self.evidence.replace_conflicts(candidate.id, EXTRACTION_VERSION, conflicts)
+        unresolved = any(
+            item.resolution_status.value == "unresolved"
+            for item in self.evidence.conflicts_for(candidate.id)
+        )
+        review_status = (
+            CandidateStatus.COLLECTED
+            if not (CORE_FIELDS - set(normalized)) and not unresolved and not low_confidence
+            else CandidateStatus.NEEDS_REVIEW
+        )
+        if unresolved or candidate.review_status not in {
+            CandidateStatus.APPROVED,
+            CandidateStatus.REJECTED,
+            CandidateStatus.EXPORTED,
+        }:
+            candidate.review_status = review_status
+            self.candidates.save(candidate)
+        from pathfinder_collector.services.context import CandidateContextService
+
+        CandidateContextService(self.evidence.session).refresh_candidate(candidate.id)
+        self.evidence.session.commit()
         status = (
             ExtractionStatus.EXTRACTED
             if review_status is CandidateStatus.COLLECTED

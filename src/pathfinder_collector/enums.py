@@ -68,6 +68,14 @@ class ResolutionStatus(StrEnum):
     RESOLVED = "resolved"
 
 
+class ConflictResolutionAction(StrEnum):
+    SELECT_FIRST = "select_first"
+    SELECT_SECOND = "select_second"
+    REVIEWER_OVERRIDE = "reviewer_override"
+    CLEAR_OPTIONAL_FIELD = "clear_optional_field"
+    KEEP_UNRESOLVED = "keep_unresolved"
+
+
 class ExportStatus(StrEnum):
     PENDING = "pending"
     COMPLETED = "completed"

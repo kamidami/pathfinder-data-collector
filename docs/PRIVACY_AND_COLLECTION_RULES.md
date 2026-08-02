@@ -22,6 +22,8 @@
   bounded evidence excerpts rather than page sections.
 - Never infer teaching language from page language, country from a domain, or programme location
   from an unrelated address. Missing or conflicting values require human review.
+- A job country is explicit operator collection context, not webpage evidence. It may become
+  effective only for a candidate in that job and only when official evidence does not contradict it.
 - Reviewer labels are short local operator labels, not accounts or email identities. Review notes
   and override files are bounded, and exported files contain no cache paths or evidence excerpts.
 - Human approval is not official verification. Exports must never label automatically collected

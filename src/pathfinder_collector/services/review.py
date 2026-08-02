@@ -24,6 +24,7 @@ from pathfinder_collector.persistence.models import (
     CandidateReviewModel,
     CandidateSourceModel,
     ConflictModel,
+    ContextConflictModel,
     SourcePageModel,
 )
 
@@ -80,7 +81,7 @@ class CandidateReviewService:
         if candidate.entity_type != EntityType.PROGRAM.value:
             raise ReviewValidationError("only programme candidates can be reviewed")
         original_status = CandidateStatus(candidate.review_status)
-        effective = dict(candidate.normalized_data or {})
+        effective = effective_candidate_data(candidate, self.session)
         stored_overrides = dict(candidate.reviewer_overrides or {})
         stored_overrides.update(normalized_overrides)
         effective.update(stored_overrides)
@@ -191,6 +192,14 @@ class CandidateReviewService:
         )
         if unresolved:
             raise ReviewValidationError("unresolved conflicts block approval")
+        context_unresolved = self.session.scalar(
+            select(ContextConflictModel.id).where(
+                ContextConflictModel.candidate_id == candidate.id,
+                ContextConflictModel.resolution_status == ResolutionStatus.UNRESOLVED.value,
+            )
+        )
+        if context_unresolved:
+            raise ReviewValidationError("operator context contradicts official source evidence")
         missing = sorted(
             field for field in APPROVAL_CORE_FIELDS if not str(effective.get(field, "")).strip()
         )
@@ -251,8 +260,15 @@ def validate_effective_programme(data: dict[str, Any]) -> None:
     _safe_url(str(data["source_url"]))
 
 
-def effective_candidate_data(candidate: CandidateModel) -> dict[str, str]:
+def effective_candidate_data(
+    candidate: CandidateModel, session: Session | None = None
+) -> dict[str, str]:
     result = {key: str(value) for key, value in (candidate.normalized_data or {}).items()}
+    if session is not None:
+        from pathfinder_collector.services.context import effective_context_values
+
+        for key, value in effective_context_values(session, candidate.id).items():
+            result.setdefault(key, value)
     result.update({key: str(value) for key, value in (candidate.reviewer_overrides or {}).items()})
     return result
 

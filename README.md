@@ -33,6 +33,9 @@ python -m pathfinder_collector program extract --job <job-uuid> --source <suppor
 python -m pathfinder_collector candidate list --job <job-uuid>
 python -m pathfinder_collector candidate show <candidate-uuid>
 python -m pathfinder_collector candidate blockers <candidate-uuid>
+python -m pathfinder_collector candidate context <candidate-uuid> --apply-job-country
+python -m pathfinder_collector candidate conflict-list <candidate-uuid>
+python -m pathfinder_collector candidate conflict-resolve <conflict-uuid> --resolution clear-optional --reviewer local-1 --notes "Reason"
 python -m pathfinder_collector candidate report <candidate-uuid>
 python -m pathfinder_collector candidate review <candidate-uuid> --decision approve --reviewer local-1
 python -m pathfinder_collector candidate history <candidate-uuid>

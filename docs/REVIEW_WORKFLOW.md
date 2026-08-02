@@ -38,3 +38,13 @@ Reviewers must return the candidate for correction rather than silently bypassin
 Use `candidate blockers <candidate-id>` before review for bounded categories, missing and
 low-confidence core fields, conflicts, warnings, source integrity, and current export eligibility.
 Candidate reports distinguish the primary and supporting sources and attribute every evidence row.
+
+`candidate context <id> --apply-job-country` explicitly records the job's validated two-letter
+country with `operator_job_context` provenance. Repeating it is idempotent. Different explicit
+official country evidence disables the context and creates a blocking context conflict.
+
+Evidence conflicts support `select-first`, `select-second`, `override`, `clear-optional`, and
+`keep-unresolved`. Every action requires a reviewer and reason. Selected values are stored as
+reviewer overrides without changing either evidence record. Core fields cannot be cleared;
+override resolution must match retained official evidence. Unchanged re-extraction preserves a
+resolution, while materially different evidence reopens a conflict and keeps the earlier audit.

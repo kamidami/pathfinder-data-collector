@@ -17,14 +17,17 @@ from pathfinder_collector.contracts.pathfinder_v1 import load_manifest
 from pathfinder_collector.enums import CandidateStatus, EntityType, ExportStatus, ResolutionStatus
 from pathfinder_collector.fetching.hashing import sha256_bytes
 from pathfinder_collector.persistence.models import (
+    CandidateContextModel,
     CandidateModel,
     CandidateSourceModel,
     ConflictModel,
+    ContextConflictModel,
     ExportCandidateModel,
     ExportFileModel,
     ExportRunModel,
     SourcePageModel,
 )
+from pathfinder_collector.services.extraction import SUPPORTED_FIELDS
 from pathfinder_collector.services.review import (
     APPROVAL_CORE_FIELDS,
     ReviewValidationError,
@@ -80,7 +83,7 @@ class PathfinderExportService:
                 continue
             approved.append(candidate)
         result.approved_selected = len(approved)
-        duplicate_groups = duplicate_candidate_groups(approved)
+        duplicate_groups = duplicate_candidate_groups(approved, self.session)
         result.duplicate_groups = [[UUID(item.id) for item in group] for group in duplicate_groups]
         if duplicate_groups:
             result.errors.append("Exact duplicate programme candidates cannot be exported together")
@@ -128,6 +131,7 @@ class PathfinderExportService:
                 "files": hashes,
                 "review_status_summary": {"human_approved": len(approved)},
                 "warnings_count": len(result.warnings),
+                "field_provenance_counts": self._provenance_counts(approved),
             }
             manifest_bytes = json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8") + b"\n"
             (temporary / "manifest.json").write_bytes(manifest_bytes)
@@ -209,7 +213,15 @@ class PathfinderExportService:
         )
         if unresolved:
             return "unresolved conflict"
-        data = effective_candidate_data(candidate)
+        context_unresolved = self.session.scalar(
+            select(ContextConflictModel.id).where(
+                ContextConflictModel.candidate_id == candidate.id,
+                ContextConflictModel.resolution_status == ResolutionStatus.UNRESOLVED.value,
+            )
+        )
+        if context_unresolved:
+            return "operator context contradicts official source evidence"
+        data = effective_candidate_data(candidate, self.session)
         missing = [field for field in APPROVAL_CORE_FIELDS if not data.get(field, "").strip()]
         if missing:
             return f"missing required fields: {', '.join(sorted(missing))}"
@@ -225,7 +237,7 @@ class PathfinderExportService:
         return None
 
     def _program_row(self, candidate: CandidateModel) -> dict[str, str]:
-        data = effective_candidate_data(candidate)
+        data = effective_candidate_data(candidate, self.session)
         row = {column: "" for column in self.manifest.entity("programs").columns}
         direct = {
             "country_code",
@@ -248,7 +260,7 @@ class PathfinderExportService:
         return {key: formula_safe(value) for key, value in row.items()}
 
     def _source_rows(self, candidate: CandidateModel) -> list[dict[str, str]]:
-        data = effective_candidate_data(candidate)
+        data = effective_candidate_data(candidate, self.session)
         sources = self.session.scalars(
             select(SourcePageModel)
             .join(CandidateSourceModel, CandidateSourceModel.source_page_id == SourcePageModel.id)
@@ -277,11 +289,40 @@ class PathfinderExportService:
             rows.append({key: formula_safe(value) for key, value in row.items()})
         return rows
 
+    def _provenance_counts(self, candidates: list[CandidateModel]) -> dict[str, int]:
+        counts = {
+            "official_source_evidence": 0,
+            "reviewer_overrides": 0,
+            "operator_job_context": 0,
+        }
+        for candidate in candidates:
+            effective = effective_candidate_data(candidate, self.session)
+            context_fields = set(
+                self.session.scalars(
+                    select(CandidateContextModel.field_name).where(
+                        CandidateContextModel.candidate_id == candidate.id,
+                        CandidateContextModel.effective.is_(True),
+                    )
+                ).all()
+            )
+            for field in SUPPORTED_FIELDS:
+                if not effective.get(field, "").strip():
+                    continue
+                if field in (candidate.reviewer_overrides or {}):
+                    counts["reviewer_overrides"] += 1
+                elif field in (candidate.normalized_data or {}):
+                    counts["official_source_evidence"] += 1
+                elif field in context_fields:
+                    counts["operator_job_context"] += 1
+        return counts
 
-def duplicate_candidate_groups(candidates: list[CandidateModel]) -> list[list[CandidateModel]]:
+
+def duplicate_candidate_groups(
+    candidates: list[CandidateModel], session: Session | None = None
+) -> list[list[CandidateModel]]:
     groups: dict[tuple[str, str, str, str], list[CandidateModel]] = {}
     for candidate in candidates:
-        data = effective_candidate_data(candidate)
+        data = effective_candidate_data(candidate, session)
         key = tuple(
             " ".join(data.get(field, "").casefold().split())
             for field in ("country_code", "university_name", "program_name", "degree_level")

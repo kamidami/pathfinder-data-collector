@@ -8,7 +8,9 @@
    fields with field-level evidence, and exposes conflicts. An operator may explicitly attach a
    fetched official supporting page to the same candidate; the primary relationship and evidence
    from every source are retained.
-6. A human explicitly approves, rejects, or returns a candidate; extraction never approves it.
+6. An operator may explicitly apply the collection job's valid country as separately attributed
+   context. A human may resolve evidence conflicts with an audited controlled action, then
+   explicitly approves, rejects, or returns a candidate; none of these steps is automatic.
 7. Effective approved values are validated, duplicate-checked, and exported to an ignored,
    versioned CSV package with manifest and validation report.
 8. Pathfinder may consume that CSV through its own import process; there is no database link.

@@ -162,6 +162,77 @@ class ConflictModel(Base):
     extraction_version: Mapped[str | None] = mapped_column(String(30), index=True)
 
 
+class CandidateContextModel(Base):
+    __tablename__ = "candidate_context_values"
+    __table_args__ = (
+        Index(
+            "ux_candidate_context_field_job",
+            "candidate_id",
+            "field_name",
+            "source_job_id",
+            unique=True,
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    candidate_id: Mapped[str] = mapped_column(
+        ForeignKey("candidate_records.id", ondelete="CASCADE")
+    )
+    field_name: Mapped[str] = mapped_column(String(100))
+    value: Mapped[str] = mapped_column(String(2000))
+    source_type: Mapped[str] = mapped_column(String(40))
+    source_job_id: Mapped[str] = mapped_column(
+        ForeignKey("collection_jobs.id", ondelete="RESTRICT")
+    )
+    effective: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+
+
+class ContextConflictModel(Base):
+    __tablename__ = "context_conflicts"
+    __table_args__ = (
+        Index(
+            "ux_context_conflict_context_evidence",
+            "context_value_id",
+            "evidence_id",
+            unique=True,
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    candidate_id: Mapped[str] = mapped_column(
+        ForeignKey("candidate_records.id", ondelete="CASCADE")
+    )
+    field_name: Mapped[str] = mapped_column(String(100))
+    context_value_id: Mapped[str] = mapped_column(
+        ForeignKey("candidate_context_values.id", ondelete="CASCADE")
+    )
+    evidence_id: Mapped[str] = mapped_column(ForeignKey("evidence_records.id", ondelete="CASCADE"))
+    resolution_status: Mapped[str] = mapped_column(String(20), default="unresolved")
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+
+
+class ConflictResolutionModel(Base):
+    __tablename__ = "conflict_resolutions"
+    __table_args__ = (
+        Index("ix_conflict_resolutions_candidate_time", "candidate_id", "reviewed_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    conflict_id: Mapped[str | None] = mapped_column(
+        ForeignKey("conflict_records.id", ondelete="SET NULL"), nullable=True
+    )
+    candidate_id: Mapped[str] = mapped_column(
+        ForeignKey("candidate_records.id", ondelete="CASCADE")
+    )
+    field_name: Mapped[str] = mapped_column(String(100))
+    resolution_action: Mapped[str] = mapped_column(String(40))
+    selected_value: Mapped[str | None] = mapped_column(Text)
+    reviewer_label: Mapped[str] = mapped_column(String(50))
+    review_notes: Mapped[str] = mapped_column(String(1000))
+    reviewed_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+
+
 class ExportRunModel(Base):
     __tablename__ = "export_runs"
 

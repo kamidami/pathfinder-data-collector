@@ -35,3 +35,8 @@ not copy files into Pathfinder internals or write its database directly.
 For an approved multi-source candidate, `source_records.csv` contains one deduplicated row per
 attached official source. `programs.csv` retains the primary canonical source URL. Neither file
 contains evidence excerpts or local cache locations.
+
+The manifest includes counts of effective fields supplied by official source evidence, reviewer
+overrides, and operator job context. Context may supply `programs.csv.country_code`, but it never
+creates a `source_records.csv` row. Conflict-cleared optional fields remain blank and
+`data_status` remains `collected`, never `verified`.
