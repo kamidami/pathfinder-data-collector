@@ -15,6 +15,7 @@ def temp_settings(tmp_path: Path) -> Settings:
         export_dir="var/exports",
         cache_dir="var/cache",
         report_dir="var/reports",
+        min_host_delay_seconds=0,
         _env_file=None,
     )
     settings.ensure_runtime_directories()

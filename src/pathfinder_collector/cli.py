@@ -1,4 +1,5 @@
 import platform
+from uuid import UUID
 
 import typer
 from pydantic import ValidationError
@@ -15,20 +16,28 @@ from pathfinder_collector.database import (
     session_scope,
 )
 from pathfinder_collector.domain.jobs import CollectionJob
-from pathfinder_collector.enums import EntityType
+from pathfinder_collector.enums import EntityType, SourceType
 from pathfinder_collector.exceptions import ContractError
-from pathfinder_collector.persistence.repositories import JobRepository
+from pathfinder_collector.fetching.client import SafeHttpClient
+from pathfinder_collector.persistence.repositories import JobRepository, SourcePageRepository
+from pathfinder_collector.services.fetching import FetchService
 from pathfinder_collector.services.jobs import create_job
 
 app = typer.Typer(help="Evidence-backed university data collector.", no_args_is_help=True)
 contract_app = typer.Typer(help="Inspect versioned Pathfinder CSV contracts.")
 job_app = typer.Typer(help="Manage collection jobs.")
+source_app = typer.Typer(help="Safely fetch and inspect official public sources.")
 app.add_typer(contract_app, name="contract")
 app.add_typer(job_app, name="job")
+app.add_typer(source_app, name="source")
 
 
 def settings() -> Settings:
     return get_settings()
+
+
+def fetch_client(config: Settings) -> SafeHttpClient:
+    return SafeHttpClient(config)
 
 
 @app.command()
@@ -131,6 +140,64 @@ def job_list() -> None:
         typer.echo(
             f"{job.id}  {job.status.value:<9}  {job.country_code}  "
             f"{job.entity_type.value:<14}  {job.requested_limit:>4}  {job.name}"
+        )
+
+
+@source_app.command("fetch")
+def source_fetch(
+    job: UUID = typer.Option(..., help="Collection job UUID."),
+    url: str = typer.Option(..., help="Official public HTTP(S) URL."),
+    source_type: SourceType = typer.Option(..., "--type", help="Controlled source type."),
+    force_refresh: bool = typer.Option(False, help="Bypass a valid page cache entry."),
+) -> None:
+    config = settings()
+    engine = create_collector_engine(config.database_url)
+    client = fetch_client(config)
+    try:
+        with session_scope(engine) as session:
+            service = FetchService(
+                config, JobRepository(session), SourcePageRepository(session), client
+            )
+            result = service.fetch_url(job, url, source_type, force_refresh=force_refresh)
+    except ValueError as exc:
+        typer.echo(f"Fetch rejected: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    finally:
+        client.close()
+        engine.dispose()
+    hash_prefix = result.content_hash[:12] if result.content_hash else "-"
+    typer.echo(f"Source: {result.source_page_id}")
+    typer.echo(f"URL: {result.safe_display_url or '(invalid URL)'}")
+    typer.echo(f"Status: {result.status.value}")
+    typer.echo(f"HTTP: {result.http_status or '-'}  Type: {result.content_type or '-'}")
+    typer.echo(f"Bytes: {result.response_bytes}  Robots: {result.robots_status.value}")
+    typer.echo(f"Cache hit: {'yes' if result.cache_hit else 'no'}  Hash: {hash_prefix}")
+    if result.safe_error_code:
+        typer.echo(f"Review: {result.safe_error_code} - {result.safe_error_summary}")
+
+
+@source_app.command("list")
+def source_list(job: UUID = typer.Option(..., help="Collection job UUID.")) -> None:
+    config = settings()
+    engine = create_collector_engine(config.database_url)
+    try:
+        with session_scope(engine) as session:
+            repository = SourcePageRepository(session)
+            if not JobRepository(session).exists(job):
+                raise ValueError("collection job does not exist")
+            pages = repository.list_for_job(job)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    finally:
+        engine.dispose()
+    if not pages:
+        typer.echo("No source pages.")
+        return
+    for page in pages:
+        safe_url = str(page.normalized_url).split("?", 1)[0]
+        typer.echo(
+            f"{page.id}  {page.fetch_status.value:<22}  {page.robots_status.value:<11}  {safe_url}"
         )
 
 

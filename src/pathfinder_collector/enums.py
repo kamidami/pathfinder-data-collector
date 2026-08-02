@@ -45,8 +45,22 @@ class ConfidenceLevel(StrEnum):
 
 class FetchStatus(StrEnum):
     PENDING = "pending"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
+    FETCHED = "fetched"
+    CACHE_HIT = "cache_hit"
+    ROBOTS_DISALLOWED = "robots_disallowed"
+    ROBOTS_UNAVAILABLE = "robots_unavailable"
+    INVALID_URL = "invalid_url"
+    UNSUPPORTED_CONTENT = "unsupported_content"
+    RESPONSE_TOO_LARGE = "response_too_large"
+    HTTP_ERROR = "http_error"
+    NETWORK_ERROR = "network_error"
+
+
+class RobotsStatus(StrEnum):
+    ALLOWED = "allowed"
+    DISALLOWED = "disallowed"
+    UNAVAILABLE = "unavailable"
+    INVALID = "invalid"
 
 
 class ResolutionStatus(StrEnum):

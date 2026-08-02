@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import ClassVar
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,6 +24,15 @@ class Settings(BaseSettings):
     cache_dir: Path = Path("var/cache")
     report_dir: Path = Path("var/reports")
     log_level: str = "INFO"
+    user_agent: str = "PathfinderCollector/0.2 (+public-data-research)"
+    connect_timeout_seconds: float = Field(default=10, gt=0, le=120)
+    read_timeout_seconds: float = Field(default=30, gt=0, le=300)
+    max_response_bytes: int = Field(default=5 * 1024 * 1024, gt=0, le=20 * 1024 * 1024)
+    max_redirects: int = Field(default=5, ge=0, le=10)
+    min_host_delay_seconds: float = Field(default=1.0, ge=0, le=60)
+    cache_ttl_hours: float = Field(default=24, gt=0, le=24 * 30)
+    robots_cache_ttl_hours: float = Field(default=24, gt=0, le=24 * 30)
+    allowed_content_types: str = "text/html,text/plain,application/xhtml+xml"
 
     _path_fields: ClassVar[tuple[str, ...]] = ("export_dir", "cache_dir", "report_dir")
 
@@ -48,6 +57,10 @@ class Settings(BaseSettings):
     @property
     def contract_manifest_path(self) -> Path:
         return self.project_root / "contracts/pathfinder/v1/manifest.json"
+
+    @property
+    def allowed_content_type_set(self) -> frozenset[str]:
+        return frozenset(item.strip().lower() for item in self.allowed_content_types.split(","))
 
     def ensure_runtime_directories(self) -> None:
         for path in (self.export_dir, self.cache_dir, self.report_dir):

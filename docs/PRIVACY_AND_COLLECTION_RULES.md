@@ -12,4 +12,9 @@
   credentials, or Pathfinder sessions.
 - Do not commit large copyrighted page copies. Raw pages belong only in ignored local cache.
 - Keep evidence excerpts short and limited to what is necessary for review.
-
+- Resolve and reject private, local, link-local, reserved, or otherwise non-public destinations;
+  apply the same checks to redirects.
+- Treat robots unavailability conservatively. Robots permission does not replace legal or site
+  terms review, particularly before bulk collection or content reuse.
+- Fetch only bounded HTML/plain text with an identifiable user agent, process-local per-host
+  delays, finite retries, and ignored cache storage.

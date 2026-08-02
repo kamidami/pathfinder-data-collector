@@ -71,7 +71,10 @@ class CandidateModel(Base):
 
 class SourcePageModel(Base):
     __tablename__ = "source_pages"
-    __table_args__ = (Index("ix_source_pages_normalized_url", "normalized_url"),)
+    __table_args__ = (
+        Index("ix_source_pages_normalized_url", "normalized_url"),
+        Index("ux_source_pages_job_original_url", "job_id", "original_url", unique=True),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     job_id: Mapped[str] = mapped_column(ForeignKey("collection_jobs.id", ondelete="CASCADE"))
@@ -83,6 +86,14 @@ class SourcePageModel(Base):
     content_hash: Mapped[str | None] = mapped_column(String(128))
     cached_file_path: Mapped[str | None] = mapped_column(String(500))
     fetched_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    robots_status: Mapped[str] = mapped_column(String(20), default="unavailable")
+    http_status: Mapped[int | None] = mapped_column(Integer)
+    content_type: Mapped[str | None] = mapped_column(String(100))
+    response_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    redirect_count: Mapped[int] = mapped_column(Integer, default=0)
+    cache_expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    error_code: Mapped[str | None] = mapped_column(String(100))
+    safe_error_summary: Mapped[str | None] = mapped_column(String(500))
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
 
 

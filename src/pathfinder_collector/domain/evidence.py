@@ -8,6 +8,7 @@ from pathfinder_collector.enums import (
     ConfidenceLevel,
     FetchStatus,
     ResolutionStatus,
+    RobotsStatus,
     SourceType,
 )
 
@@ -25,6 +26,14 @@ class SourcePage(BaseModel):
     content_hash: str | None = Field(default=None, max_length=128)
     cached_file_path: str | None = Field(default=None, max_length=500)
     fetched_at: datetime | None = None
+    robots_status: RobotsStatus = RobotsStatus.UNAVAILABLE
+    http_status: int | None = None
+    content_type: str | None = Field(default=None, max_length=100)
+    response_bytes: int = Field(default=0, ge=0)
+    redirect_count: int = Field(default=0, ge=0)
+    cache_expires_at: datetime | None = None
+    error_code: str | None = Field(default=None, max_length=100)
+    safe_error_summary: str | None = Field(default=None, max_length=500)
     created_at: datetime = Field(default_factory=utc_now)
 
 
