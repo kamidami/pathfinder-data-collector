@@ -3,7 +3,7 @@ import io
 import json
 import re
 import shutil
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -89,14 +89,21 @@ class PathfinderExportService:
             result.errors.append("Exact duplicate programme candidates cannot be exported together")
         if result.errors:
             return result
-        program_rows = [self._program_row(candidate) for candidate in approved]
-        source_rows = _deduplicate_rows(
-            [row for candidate in approved for row in self._source_rows(candidate)]
-        )
+        program_rows: list[dict[str, str]] = []
+        source_rows: list[dict[str, str]] = []
+        for candidate in approved:
+            try:
+                program_rows.append(self._program_row(candidate))
+                source_rows.extend(self._source_rows(candidate))
+            except ValueError as exc:
+                result.errors.append(f"Candidate {candidate.id}: {exc}")
+        if result.errors:
+            return result
+        source_rows = _deduplicate_rows(source_rows)
         program_header = self.manifest.entity("programs").columns
         source_header = self.manifest.entity("source_records").columns
-        _validate_rows(program_header, program_rows)
-        _validate_rows(source_header, source_rows)
+        _validate_rows(self.manifest.entity("programs"), program_rows)
+        _validate_rows(self.manifest.entity("source_records"), source_rows)
         if dry_run:
             result.exported_count = len(approved)
             return result
@@ -222,6 +229,8 @@ class PathfinderExportService:
         if context_unresolved:
             return "operator context contradicts official source evidence"
         data = effective_candidate_data(candidate, self.session)
+        if not data.get("field_category", "").strip():
+            return "missing required fields: field_category"
         missing = [field for field in APPROVAL_CORE_FIELDS if not data.get(field, "").strip()]
         if missing:
             return f"missing required fields: {', '.join(sorted(missing))}"
@@ -252,11 +261,17 @@ class PathfinderExportService:
         }
         for field in direct:
             row[field] = data.get(field, "")
+        row["country_code"] = _mapped_value(
+            self.manifest.entity("programs"), "country_code", row["country_code"]
+        )
         row["language"] = data.get("teaching_language", "")
         if data.get("duration_value") and data.get("duration_unit"):
             row["duration"] = f"{data['duration_value']} {data['duration_unit']}"
         row["source_confidence"] = "high"
         row["data_status"] = "collected"
+        row["last_verified_date"] = (
+            candidate.approved_at.date().isoformat() if candidate.approved_at else ""
+        )
         return {key: formula_safe(value) for key, value in row.items()}
 
     def _source_rows(self, candidate: CandidateModel) -> list[dict[str, str]]:
@@ -273,10 +288,16 @@ class PathfinderExportService:
             row.update(
                 {
                     "title": data.get("program_name", ""),
-                    "source_type": source.source_type,
+                    "source_type": _mapped_value(
+                        self.manifest.entity("source_records"), "source_type", source.source_type
+                    ),
                     "url": _without_query(source.normalized_url),
                     "publisher": data.get("university_name", ""),
-                    "country_code": data.get("country_code", ""),
+                    "country_code": _mapped_value(
+                        self.manifest.entity("source_records"),
+                        "country_code",
+                        data.get("country_code", ""),
+                    ),
                     "related_entity_type": "program",
                     "related_entity_name": data.get("program_name", ""),
                     "last_verified_date": candidate.approved_at.date().isoformat()
@@ -346,7 +367,8 @@ def _csv_bytes(header: list[str], rows: list[dict[str, str]]) -> bytes:
     return stream.getvalue().encode("utf-8")
 
 
-def _validate_rows(header: list[str], rows: list[dict[str, str]]) -> None:
+def _validate_rows(entity: object, rows: list[dict[str, str]]) -> None:
+    header = entity.columns
     seen: set[tuple[str, ...]] = set()
     for row in rows:
         if list(row) != header:
@@ -357,6 +379,37 @@ def _validate_rows(header: list[str], rows: list[dict[str, str]]) -> None:
         seen.add(values)
         for value in values:
             value.encode("utf-8")
+        missing = [column for column in entity.required_columns if not row[column].strip()]
+        missing += [
+            column
+            for column in entity.conditional_required.get(row.get("data_status", ""), [])
+            if not row[column].strip()
+        ]
+        if missing:
+            raise ValueError(f"{entity.entity_type} missing required values: {', '.join(missing)}")
+        for column, allowed in entity.allowed_values.items():
+            if row[column] and row[column] not in allowed:
+                raise ValueError(
+                    f"{entity.entity_type}.{column} has unsupported value: {row[column]}"
+                )
+        for column in entity.date_columns:
+            if row[column]:
+                if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", row[column]):
+                    raise ValueError(f"{entity.entity_type}.{column} must use YYYY-MM-DD")
+                date.fromisoformat(row[column])
+        for column in entity.url_columns:
+            if row[column] and not re.match(r"^https?://[^/\s]+", row[column]):
+                raise ValueError(f"{entity.entity_type}.{column} must be an HTTP(S) URL")
+
+
+def _mapped_value(entity: object, field: str, value: str) -> str:
+    mapping = entity.value_mappings.get(field, {})
+    if not value or not mapping:
+        return value
+    try:
+        return mapping[value]
+    except KeyError as exc:
+        raise ValueError(f"no Pathfinder v1 mapping for {field} value: {value}") from exc
 
 
 def _deduplicate_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:

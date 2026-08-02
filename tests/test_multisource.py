@@ -168,7 +168,10 @@ def test_report_and_export_represent_multiple_sources_safely(temp_settings: Sett
         assert "?x=1" not in report
         assert "<script" not in report
         CandidateReviewService(session).review_candidate(
-            first.candidate_id, ReviewDecision.APPROVE, "reviewer"
+            first.candidate_id,
+            ReviewDecision.APPROVE,
+            "reviewer",
+            {"field_category": "Computer Science / IT"},
         )
         result = PathfinderExportService(temp_settings, session).export_programs(job_id=job.id)
         with (result.export_directory / "source_records.csv").open(

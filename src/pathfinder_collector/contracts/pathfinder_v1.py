@@ -13,6 +13,11 @@ class ContractEntity(BaseModel):
     source_pathfinder_template: str
     columns: list[str]
     required_columns: list[str] = Field(default_factory=list)
+    conditional_required: dict[str, list[str]] = Field(default_factory=dict)
+    allowed_values: dict[str, list[str]] = Field(default_factory=dict)
+    date_columns: list[str] = Field(default_factory=list)
+    url_columns: list[str] = Field(default_factory=list)
+    value_mappings: dict[str, dict[str, str]] = Field(default_factory=dict)
 
 
 class ContractManifest(BaseModel):

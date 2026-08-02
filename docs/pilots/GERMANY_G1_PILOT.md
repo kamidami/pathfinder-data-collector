@@ -70,7 +70,33 @@ HTTP request. Optional multi-source attachment was therefore not exercised in th
 
 ## Review and export
 
-The dry-run selected zero approved records and clearly skipped four needs-review candidates.
+### Compatibility hotfix (2026-08-02)
+
+Four candidates were subsequently approved under the operator-context workflow. A human reviewer
+classified RWTH Data Science, Saarland Data Science and Artificial Intelligence, and TUM Data
+Engineering and Analytics as `Data Science / AI`, and Stuttgart Computer Science as
+`Computer Science / IT`. These are reviewer overrides with review notes, not hard-coded
+programme mappings.
+
+The replacement package is
+`var/exports/466ae466-41f3-4a58-ad56-0d50e3d3419c/`, labelled
+`germany-g1-pathfinder-compatible`. It contains four programme rows and six deduplicated source
+rows. Programme identity keys and source URLs each have zero duplicate groups. It emits `DEU`,
+Pathfinder's `program` source type, and `2026-08-02` review dates. All earlier G1 packages are
+superseded and must not be imported.
+
+The read-only contract compatibility check passed against the real Pathfinder checkout. The real
+Pathfinder management command uses `--template` (not `--entity`). Both importer dry-runs passed
+against a disposable copy of the Pathfinder SQLite database, leaving the live database and
+repository untouched:
+
+```text
+Dry run passed for 4 row(s). No data was saved.
+Dry run passed for 6 row(s). No data was saved.
+```
+
+The original Task 0.5 dry-run selected zero approved records and clearly skipped four
+needs-review candidates.
 The real export did the same and generated a contract-valid, header-only package at:
 
 `var/exports/eb5f2351-11e0-48f3-b4df-28ae108f3239/`

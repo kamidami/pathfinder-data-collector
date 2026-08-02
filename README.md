@@ -56,9 +56,11 @@ store metadata in collector-owned SQLite without storing raw HTML in database ro
 
 ## Data contract and limitations
 
-The v1 templates preserve Pathfinder's observed CSV headers and order. The manifest records
-their provenance. Required fields are deliberately left unspecified because header-only source
-templates do not establish nullability. No programme discovery, automated verification, web UI,
+The v1 templates preserve Pathfinder's observed CSV headers and order. The manifest also records
+importer-derived required fields, conditional dates, enums, URLs, field categories, country-code
+mappings, and source-type mappings. Use `contract compatibility-check --pathfinder-root <path>`
+to compare those rules with a checkout without importing Pathfinder or opening its database. No
+programme discovery, automated verification, web UI,
 Pathfinder database integration, or AI feature exists.
 Human approval remains mandatory before export.
 

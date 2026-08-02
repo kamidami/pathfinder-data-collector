@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 from pathfinder_collector.config import Settings, get_settings
+from pathfinder_collector.contracts.compatibility import check_pathfinder_compatibility
 from pathfinder_collector.contracts.pathfinder_v1 import load_manifest
 from pathfinder_collector.database import (
     check_connection,
@@ -113,6 +114,19 @@ def contract_show(entity_name: str) -> None:
     typer.echo(f"Contract v1 / {entity.entity_type}")
     for index, column in enumerate(entity.columns, start=1):
         typer.echo(f"{index:>2}. {column}")
+
+
+@contract_app.command("compatibility-check")
+def contract_compatibility_check(
+    pathfinder_root: Path = typer.Option(..., "--pathfinder-root", exists=True, file_okay=False),
+) -> None:
+    """Read-only check of this contract against a Pathfinder checkout."""
+    errors = check_pathfinder_compatibility(pathfinder_root.resolve(), load_manifest(settings()))
+    if errors:
+        for error in errors:
+            typer.echo(f"ERROR: {error}", err=True)
+        raise typer.Exit(1)
+    typer.echo("Pathfinder v1 compatibility: OK (headers and importer semantics)")
 
 
 @job_app.command("create")

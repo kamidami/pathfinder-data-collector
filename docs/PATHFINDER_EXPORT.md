@@ -13,18 +13,24 @@ Each successful run creates an ignored `var/exports/<run-uuid>/` package contain
 Only explicitly human-approved programme candidates are eligible. `exported` candidates remain
 eligible for repeat, auditable exports because that status implies prior approval. Collected,
 needs-review, and rejected candidates are skipped. Unresolved conflicts, invalid effective data,
-missing sources, and exact duplicate programme keys block export.
+missing sources, missing or non-canonical field classifications, unmapped country/source values,
+invalid dates/URLs, and exact duplicate programme keys block export.
 
 CSV is UTF-8, uses standard quoting and CRLF line endings, preserves missing values as blank, and
 prefixes spreadsheet-formula-leading cells with an apostrophe. Unsupported fields—including
 tuition, deadlines, requirements, scores, documents, and scholarships—remain blank. The
 `data_status` value is conservatively `collected`, never `verified`.
+Country values are mapped from the collector's ISO alpha-2 codes to Pathfinder's alpha-3 codes.
+Collector source types are explicitly mapped to Pathfinder's source enum. Both programme and
+source rows receive the human approval date as `last_verified_date`; this means reviewed by the
+collector operator, not independently verified by Pathfinder.
 
 ```powershell
 python -m pathfinder_collector candidate duplicates --job <job-id>
 python -m pathfinder_collector export programs --job <job-id> --dry-run
 python -m pathfinder_collector export programs --job <job-id> --name reviewed-germany
 python -m pathfinder_collector export show <export-run-id>
+python -m pathfinder_collector contract compatibility-check --pathfinder-root C:\path\to\pathfinder
 ```
 
 Dry-run validates without creating a package or changing candidate state. To import, inspect the
@@ -40,3 +46,7 @@ The manifest includes counts of effective fields supplied by official source evi
 overrides, and operator job context. Context may supply `programs.csv.country_code`, but it never
 creates a `source_records.csv` row. Conflict-cleared optional fields remain blank and
 `data_status` remains `collected`, never `verified`.
+
+The compatible Germany G1 replacement is export run
+`466ae466-41f3-4a58-ad56-0d50e3d3419c`, labelled
+`germany-g1-pathfinder-compatible`. Earlier G1 packages are superseded and must not be imported.

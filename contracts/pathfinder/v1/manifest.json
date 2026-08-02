@@ -1,13 +1,23 @@
 {
   "contract_version": "1",
-  "note": "Headers copied exactly from Pathfinder header-only templates. Required columns are empty because nullability cannot be derived safely from headers alone.",
+  "note": "Exact Pathfinder CSV headers plus importer-derived semantic constraints, verified by the read-only compatibility check.",
   "entities": [
     {
       "entity_type": "programs",
       "template": "programs_template.csv",
       "source_pathfinder_template": "programs_template.csv",
       "columns": ["country_code", "university_name", "program_name", "degree_level", "field_category", "city", "language", "duration", "tuition_min", "tuition_max", "currency", "intake", "application_deadline", "grade_requirement", "english_requirement", "work_experience_requirement", "application_url", "program_url", "notes", "source_url", "last_verified_date", "source_confidence", "data_status"],
-      "required_columns": []
+      "required_columns": ["country_code", "university_name", "program_name", "degree_level", "field_category", "data_status"],
+      "conditional_required": {"collected": ["source_url", "last_verified_date"], "verified": ["source_url", "last_verified_date"]},
+      "allowed_values": {
+        "degree_level": ["bachelor", "master", "phd", "mba", "other"],
+        "field_category": ["Computer Science / IT", "Data Science / AI", "Engineering", "Business / Management", "Medicine / Health", "Natural Sciences", "Social Sciences", "Arts / Design", "Education", "Law", "Agriculture / Environment", "Hospitality / Tourism", "Other"],
+        "source_confidence": ["high", "medium", "low", "unknown"],
+        "data_status": ["demo", "collected", "verified", "needs_review"]
+      },
+      "date_columns": ["last_verified_date"],
+      "url_columns": ["application_url", "program_url", "source_url"],
+      "value_mappings": {"country_code": {"DE": "DEU", "NL": "NLD", "SE": "SWE", "IT": "ITA", "AT": "AUT", "FI": "FIN", "FR": "FRA", "IE": "IRL", "HU": "HUN"}}
     },
     {
       "entity_type": "scholarships",
@@ -35,7 +45,14 @@
       "template": "source_records_template.csv",
       "source_pathfinder_template": "source_records_template.csv",
       "columns": ["title", "source_type", "url", "publisher", "country_code", "related_entity_type", "related_entity_name", "last_verified_date", "confidence", "notes"],
-      "required_columns": []
+      "required_columns": ["title", "source_type", "url", "confidence"],
+      "allowed_values": {"source_type": ["country", "program", "scholarship", "visa", "cost", "other"], "confidence": ["high", "medium", "low", "unknown"]},
+      "date_columns": ["last_verified_date"],
+      "url_columns": ["url"],
+      "value_mappings": {
+        "country_code": {"DE": "DEU", "NL": "NLD", "SE": "SWE", "IT": "ITA", "AT": "AUT", "FI": "FIN", "FR": "FRA", "IE": "IRL", "HU": "HUN"},
+        "source_type": {"official_program": "program", "official_admissions": "program", "official_fees": "cost", "official_deadlines": "program", "official_scholarship": "scholarship", "official_government": "country", "other_official": "other"}
+      }
     },
     {
       "entity_type": "countries",
@@ -46,4 +63,3 @@
     }
   ]
 }
-

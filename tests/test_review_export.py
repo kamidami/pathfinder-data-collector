@@ -229,7 +229,11 @@ def test_export_exact_contract_formula_safety_hashes_and_status(temp_settings: S
             extraction.candidate_id,
             ReviewDecision.APPROVE,
             "reviewer",
-            {"program_name": "=SUM(A1:A2)", "city": ""},
+            {
+                "program_name": "=SUM(A1:A2)",
+                "city": "",
+                "field_category": "Computer Science / IT",
+            },
         )
         service = PathfinderExportService(temp_settings, session)
         dry = service.export_programs(job_id=job.id, dry_run=True)

@@ -9,6 +9,14 @@ def test_contract_manifest_loads() -> None:
     manifest = load_manifest()
     assert manifest.contract_version == "1"
     assert len(manifest.entities) == 6
+    programs = manifest.entity("programs")
+    assert "field_category" in programs.required_columns
+    assert programs.conditional_required["collected"] == ["source_url", "last_verified_date"]
+    assert programs.value_mappings["country_code"]["DE"] == "DEU"
+    assert (
+        manifest.entity("source_records").value_mappings["source_type"]["official_program"]
+        == "program"
+    )
 
 
 def test_exact_csv_header_order() -> None:

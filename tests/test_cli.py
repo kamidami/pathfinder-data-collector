@@ -246,7 +246,10 @@ def test_review_history_duplicates_export_and_show_cli(
     )
     candidate_id = extracted.stdout.split("Candidate: ", 1)[1].splitlines()[0]
     override_file = temp_settings.project_root / "review_overrides.json"
-    override_file.write_text('{"city":"<Munich>"}', encoding="utf-8")
+    override_file.write_text(
+        '{"city":"<Munich>","field_category":"Computer Science / IT"}',
+        encoding="utf-8",
+    )
     reviewed = runner.invoke(
         cli_with_settings,
         [

@@ -245,7 +245,10 @@ def test_report_and_export_record_context_provenance(temp_settings: Settings) ->
         assert "provenance=job context" in report
         assert "Human-approved values are not verified" in report
         CandidateReviewService(session).review_candidate(
-            result.candidate_id, ReviewDecision.APPROVE, "reviewer"
+            result.candidate_id,
+            ReviewDecision.APPROVE,
+            "reviewer",
+            {"field_category": "Computer Science / IT"},
         )
         exported = PathfinderExportService(temp_settings, session).export_programs(job_id=job.id)
         manifest = json.loads((exported.export_directory / "manifest.json").read_text())
@@ -255,12 +258,12 @@ def test_report_and_export_record_context_provenance(temp_settings: Settings) ->
         ) as handle:
             sources = list(csv.DictReader(handle))
         assert len(sources) == 1
-        assert sources[0]["source_type"] == "official_program"
+        assert sources[0]["source_type"] == "program"
         with (exported.export_directory / "programs.csv").open(
             encoding="utf-8", newline=""
         ) as handle:
             programme = next(csv.DictReader(handle))
-        assert programme["country_code"] == "DE"
+        assert programme["country_code"] == "DEU"
         assert programme["data_status"] == "collected"
         assert session.scalar(select(func.count()).select_from(ConflictModel)) == 0
         assert (
