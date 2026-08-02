@@ -45,9 +45,11 @@ class EvidenceRecord(BaseModel):
     source_page_id: UUID
     field_name: str = Field(min_length=1, max_length=100)
     extracted_value: str = Field(max_length=2000)
+    normalized_value: str | None = Field(default=None, max_length=2000)
     evidence_locator: str | None = Field(default=None, max_length=500)
     short_evidence_text: str | None = Field(default=None, max_length=500)
     confidence: ConfidenceLevel
+    extraction_version: str | None = Field(default=None, max_length=30)
     created_at: datetime = Field(default_factory=utc_now)
 
 
@@ -63,3 +65,4 @@ class ConflictRecord(BaseModel):
     resolved_value: str | None = Field(default=None, max_length=2000)
     created_at: datetime = Field(default_factory=utc_now)
     resolved_at: datetime | None = None
+    extraction_version: str | None = Field(default=None, max_length=30)

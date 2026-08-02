@@ -1,9 +1,10 @@
 from typing import Protocol, TypeVar
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from pathfinder_collector.domain.evidence import SourcePage
+from pathfinder_collector.domain.candidates import CandidateRecord
+from pathfinder_collector.domain.evidence import ConflictRecord, EvidenceRecord, SourcePage
 from pathfinder_collector.domain.jobs import CollectionJob
 from pathfinder_collector.enums import (
     EntityType,
@@ -12,7 +13,13 @@ from pathfinder_collector.enums import (
     RobotsStatus,
     SourceType,
 )
-from pathfinder_collector.persistence.models import JobModel, SourcePageModel
+from pathfinder_collector.persistence.models import (
+    CandidateModel,
+    ConflictModel,
+    EvidenceModel,
+    JobModel,
+    SourcePageModel,
+)
 
 
 class JobRepositoryProtocol(Protocol):
@@ -95,6 +102,23 @@ class JobRepository:
     def exists(self, job_id: object) -> bool:
         return self.session.get(JobModel, str(job_id)) is not None
 
+    def get(self, job_id: object) -> CollectionJob | None:
+        row = self.session.get(JobModel, str(job_id))
+        if row is None:
+            return None
+        return CollectionJob(
+            id=row.id,
+            name=row.name,
+            country_code=row.country_code,
+            entity_type=EntityType(row.entity_type),
+            requested_limit=row.requested_limit,
+            status=JobStatus(row.status),
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+            error_code=row.error_code,
+            safe_error_summary=row.safe_error_summary,
+        )
+
 
 class SourcePageRepository:
     def __init__(self, session: Session) -> None:
@@ -170,3 +194,171 @@ class SourcePageRepository:
             safe_error_summary=row.safe_error_summary,
             created_at=row.created_at,
         )
+
+
+class CandidateRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def find_by_source(self, job_id: object, source_page_id: object) -> CandidateRecord | None:
+        row = self.session.scalar(
+            select(CandidateModel).where(
+                CandidateModel.job_id == str(job_id),
+                CandidateModel.source_page_id == str(source_page_id),
+            )
+        )
+        return self._domain(row) if row else None
+
+    def get(self, candidate_id: object) -> CandidateRecord | None:
+        row = self.session.get(CandidateModel, str(candidate_id))
+        return self._domain(row) if row else None
+
+    def list_for_job(self, job_id: object) -> list[CandidateRecord]:
+        rows = self.session.scalars(
+            select(CandidateModel)
+            .where(CandidateModel.job_id == str(job_id))
+            .order_by(CandidateModel.created_at)
+        ).all()
+        return [self._domain(row) for row in rows]
+
+    def save(self, candidate: CandidateRecord) -> CandidateRecord:
+        row = self.session.get(CandidateModel, str(candidate.id))
+        if row is None:
+            row = CandidateModel(
+                id=str(candidate.id), job_id=str(candidate.job_id), created_at=candidate.created_at
+            )
+            self.session.add(row)
+        values = {
+            "source_page_id": str(candidate.source_page_id) if candidate.source_page_id else None,
+            "entity_type": candidate.entity_type.value,
+            "review_status": candidate.review_status.value,
+            "schema_version": candidate.schema_version,
+            "normalized_data": candidate.normalized_data,
+            "extraction_version": candidate.extraction_version,
+            "last_extracted_at": candidate.last_extracted_at,
+            "extraction_warnings": candidate.extraction_warnings,
+            "updated_at": candidate.updated_at,
+        }
+        for name, value in values.items():
+            setattr(row, name, value)
+        self.session.commit()
+        return candidate
+
+    @staticmethod
+    def _domain(row: CandidateModel) -> CandidateRecord:
+        return CandidateRecord(
+            id=row.id,
+            job_id=row.job_id,
+            source_page_id=row.source_page_id,
+            entity_type=EntityType(row.entity_type),
+            review_status=row.review_status,
+            schema_version=row.schema_version,
+            normalized_data=row.normalized_data,
+            extraction_version=row.extraction_version,
+            last_extracted_at=row.last_extracted_at,
+            extraction_warnings=row.extraction_warnings or [],
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
+
+
+class ExtractionEvidenceRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def replace(
+        self,
+        candidate_id: object,
+        version: str,
+        evidence: list[EvidenceRecord],
+        conflicts: list[ConflictRecord],
+    ) -> None:
+        evidence_ids = select(EvidenceModel.id).where(
+            EvidenceModel.candidate_id == str(candidate_id),
+            EvidenceModel.extraction_version == version,
+        )
+        self.session.execute(
+            delete(ConflictModel).where(
+                ConflictModel.candidate_id == str(candidate_id),
+                ConflictModel.extraction_version == version,
+            )
+        )
+        self.session.execute(delete(EvidenceModel).where(EvidenceModel.id.in_(evidence_ids)))
+        for item in evidence:
+            self.session.add(
+                EvidenceModel(
+                    id=str(item.id),
+                    candidate_id=str(item.candidate_id),
+                    source_page_id=str(item.source_page_id),
+                    field_name=item.field_name,
+                    extracted_value=item.extracted_value,
+                    normalized_value=item.normalized_value,
+                    evidence_locator=item.evidence_locator,
+                    short_evidence_text=item.short_evidence_text,
+                    confidence=item.confidence.value,
+                    extraction_version=item.extraction_version,
+                    created_at=item.created_at,
+                )
+            )
+        self.session.flush()
+        for item in conflicts:
+            self.session.add(
+                ConflictModel(
+                    id=str(item.id),
+                    candidate_id=str(item.candidate_id),
+                    field_name=item.field_name,
+                    first_evidence_id=str(item.first_evidence_id),
+                    second_evidence_id=str(item.second_evidence_id),
+                    resolution_status=item.resolution_status.value,
+                    resolved_value=item.resolved_value,
+                    created_at=item.created_at,
+                    resolved_at=item.resolved_at,
+                    extraction_version=item.extraction_version,
+                )
+            )
+        self.session.commit()
+
+    def evidence_for(self, candidate_id: object) -> list[EvidenceRecord]:
+        rows = self.session.scalars(
+            select(EvidenceModel)
+            .where(EvidenceModel.candidate_id == str(candidate_id))
+            .order_by(EvidenceModel.field_name, EvidenceModel.created_at)
+        ).all()
+        return [
+            EvidenceRecord(
+                id=row.id,
+                candidate_id=row.candidate_id,
+                source_page_id=row.source_page_id,
+                field_name=row.field_name,
+                extracted_value=row.extracted_value,
+                normalized_value=row.normalized_value,
+                evidence_locator=row.evidence_locator,
+                short_evidence_text=row.short_evidence_text,
+                confidence=row.confidence,
+                extraction_version=row.extraction_version,
+                created_at=row.created_at,
+            )
+            for row in rows
+        ]
+
+    def conflicts_for(self, candidate_id: object) -> list[ConflictRecord]:
+        rows = self.session.scalars(
+            select(ConflictModel)
+            .where(ConflictModel.candidate_id == str(candidate_id))
+            .order_by(ConflictModel.field_name)
+        ).all()
+        return [
+            ConflictRecord(
+                id=row.id,
+                candidate_id=row.candidate_id,
+                field_name=row.field_name,
+                first_evidence_id=row.first_evidence_id,
+                second_evidence_id=row.second_evidence_id,
+                resolution_status=row.resolution_status,
+                resolved_value=row.resolved_value,
+                created_at=row.created_at,
+                resolved_at=row.resolved_at,
+                extraction_version=row.extraction_version,
+            )
+            for row in rows
+        ]

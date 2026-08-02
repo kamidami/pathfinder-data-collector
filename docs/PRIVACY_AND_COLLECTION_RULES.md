@@ -18,3 +18,7 @@
   terms review, particularly before bulk collection or content reuse.
 - Fetch only bounded HTML/plain text with an identifiable user agent, process-local per-host
   delays, finite retries, and ignored cache storage.
+- Extraction must read cached HTML only, execute no scripts, load no subresources, and retain only
+  bounded evidence excerpts rather than page sections.
+- Never infer teaching language from page language, country from a domain, or programme location
+  from an unrelated address. Missing or conflicting values require human review.

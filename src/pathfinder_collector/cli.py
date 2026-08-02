@@ -19,17 +19,31 @@ from pathfinder_collector.domain.jobs import CollectionJob
 from pathfinder_collector.enums import EntityType, SourceType
 from pathfinder_collector.exceptions import ContractError
 from pathfinder_collector.fetching.client import SafeHttpClient
-from pathfinder_collector.persistence.repositories import JobRepository, SourcePageRepository
+from pathfinder_collector.persistence.repositories import (
+    CandidateRepository,
+    ExtractionEvidenceRepository,
+    JobRepository,
+    SourcePageRepository,
+)
+from pathfinder_collector.services.extraction import (
+    SUPPORTED_FIELDS,
+    ProgrammeExtractionService,
+)
 from pathfinder_collector.services.fetching import FetchService
 from pathfinder_collector.services.jobs import create_job
+from pathfinder_collector.services.reports import CandidateReportService
 
 app = typer.Typer(help="Evidence-backed university data collector.", no_args_is_help=True)
 contract_app = typer.Typer(help="Inspect versioned Pathfinder CSV contracts.")
 job_app = typer.Typer(help="Manage collection jobs.")
 source_app = typer.Typer(help="Safely fetch and inspect official public sources.")
+program_app = typer.Typer(help="Extract programme fields from fetched HTML.")
+candidate_app = typer.Typer(help="Review extracted candidates and evidence.")
 app.add_typer(contract_app, name="contract")
 app.add_typer(job_app, name="job")
 app.add_typer(source_app, name="source")
+app.add_typer(program_app, name="program")
+app.add_typer(candidate_app, name="candidate")
 
 
 def settings() -> Settings:
@@ -199,6 +213,124 @@ def source_list(job: UUID = typer.Option(..., help="Collection job UUID.")) -> N
         typer.echo(
             f"{page.id}  {page.fetch_status.value:<22}  {page.robots_status.value:<11}  {safe_url}"
         )
+
+
+@program_app.command("extract")
+def program_extract(
+    job: UUID = typer.Option(..., help="Programme collection job UUID."),
+    source: UUID = typer.Option(..., help="Fetched source-page UUID."),
+    force: bool = typer.Option(False, help="Re-run deterministic extraction."),
+) -> None:
+    config = settings()
+    engine = create_collector_engine(config.database_url)
+    try:
+        with session_scope(engine) as session:
+            result = ProgrammeExtractionService(
+                JobRepository(session),
+                SourcePageRepository(session),
+                CandidateRepository(session),
+                ExtractionEvidenceRepository(session),
+            ).extract_source(job, source, force=force)
+    except ValueError as exc:
+        typer.echo(f"Extraction rejected: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    finally:
+        engine.dispose()
+    typer.echo(f"Candidate: {result.candidate_id or '-'}")
+    typer.echo(f"Extraction: {result.extraction_status.value}")
+    typer.echo(
+        f"Review status: {result.candidate_status.value if result.candidate_status else '-'}"
+    )
+    typer.echo(f"Fields found: {', '.join(result.fields_found) or '-'}")
+    typer.echo(f"Fields missing: {', '.join(result.fields_missing) or '-'}")
+    typer.echo(f"Evidence: {result.evidence_count}  Conflicts: {result.conflicts_count}")
+    for warning in result.warnings[:10]:
+        typer.echo(f"Warning: {warning}")
+
+
+@candidate_app.command("list")
+def candidate_list(job: UUID = typer.Option(..., help="Collection job UUID.")) -> None:
+    config = settings()
+    engine = create_collector_engine(config.database_url)
+    try:
+        with session_scope(engine) as session:
+            if not JobRepository(session).exists(job):
+                raise ValueError("collection job does not exist")
+            candidates = CandidateRepository(session).list_for_job(job)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    finally:
+        engine.dispose()
+    if not candidates:
+        typer.echo("No candidates.")
+        return
+    for candidate in candidates:
+        name = candidate.normalized_data.get("program_name", "(unnamed)")
+        typer.echo(f"{candidate.id}  {candidate.review_status.value:<12}  {name}")
+
+
+@candidate_app.command("show")
+def candidate_show(candidate_id: UUID) -> None:
+    config = settings()
+    engine = create_collector_engine(config.database_url)
+    try:
+        with session_scope(engine) as session:
+            candidate = CandidateRepository(session).get(candidate_id)
+            if candidate is None:
+                raise ValueError("candidate does not exist")
+            evidence_repo = ExtractionEvidenceRepository(session)
+            evidence = evidence_repo.evidence_for(candidate_id)
+            conflicts = evidence_repo.conflicts_for(candidate_id)
+            source = next(
+                (
+                    item
+                    for item in SourcePageRepository(session).list_for_job(candidate.job_id)
+                    if item.id == candidate.source_page_id
+                ),
+                None,
+            )
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    finally:
+        engine.dispose()
+    typer.echo(f"Candidate: {candidate.id}")
+    typer.echo(f"Status: {candidate.review_status.value}")
+    if source:
+        typer.echo(f"Source: {str(source.normalized_url).split('?', 1)[0]}")
+    for key, value in sorted(candidate.normalized_data.items()):
+        typer.echo(f"{key}: {value}")
+    missing = sorted(SUPPORTED_FIELDS - set(candidate.normalized_data))
+    typer.echo(f"Missing: {', '.join(missing) or '-'}")
+    confidence = {level: 0 for level in ("high", "medium", "low")}
+    for item in evidence:
+        confidence[item.confidence.value] += 1
+    typer.echo(
+        "Evidence confidence: "
+        + ", ".join(f"{level}={count}" for level, count in confidence.items())
+    )
+    typer.echo(f"Conflicts: {', '.join(item.field_name for item in conflicts) or '-'}")
+
+
+@candidate_app.command("report")
+def candidate_report(candidate_id: UUID) -> None:
+    config = settings()
+    engine = create_collector_engine(config.database_url)
+    try:
+        with session_scope(engine) as session:
+            path = CandidateReportService(
+                config,
+                CandidateRepository(session),
+                ExtractionEvidenceRepository(session),
+                SourcePageRepository(session),
+            ).generate(candidate_id)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    finally:
+        engine.dispose()
+    typer.echo(f"Report: {path.relative_to(config.project_root)}")
 
 
 def _validation_message(exc: ValidationError) -> str:

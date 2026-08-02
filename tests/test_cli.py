@@ -8,10 +8,17 @@ from pathfinder_collector.database import (
     initialize_database,
     session_scope,
 )
+from pathfinder_collector.domain.evidence import SourcePage
 from pathfinder_collector.domain.jobs import CollectionJob
-from pathfinder_collector.enums import EntityType
+from pathfinder_collector.enums import (
+    EntityType,
+    FetchStatus,
+    RobotsStatus,
+    SourceType,
+)
 from pathfinder_collector.fetching.client import SafeHttpClient
-from pathfinder_collector.persistence.repositories import JobRepository
+from pathfinder_collector.fetching.hashing import sha256_bytes
+from pathfinder_collector.persistence.repositories import JobRepository, SourcePageRepository
 
 
 def test_cli_help(runner: object, cli_with_settings: object) -> None:
@@ -140,3 +147,55 @@ def test_source_fetch_and_list_cli(
     assert listed.exit_code == 0
     assert "example.test/program" in listed.stdout
     assert "token=hidden" not in listed.stdout
+
+
+def test_programme_extraction_and_candidate_cli(
+    runner: object, cli_with_settings: object, temp_settings: Settings
+) -> None:
+    engine = create_collector_engine(temp_settings.database_url)
+    initialize_database(engine)
+    content = (Path(__file__).parent / "fixtures/programme_labelled.html").read_bytes()
+    cache_path = temp_settings.cache_dir / "cli-programme.html"
+    cache_path.write_bytes(content)
+    with session_scope(engine) as session:
+        job = JobRepository(session).add(
+            CollectionJob(
+                name="extract-cli",
+                country_code="DE",
+                entity_type=EntityType.PROGRAM,
+                requested_limit=1,
+            )
+        )
+        source = SourcePageRepository(session).save(
+            SourcePage(
+                job_id=job.id,
+                original_url="https://example.test/programme?private=query",
+                normalized_url="https://example.test/programme?private=query",
+                source_type=SourceType.OFFICIAL_PROGRAM,
+                official_domain=True,
+                fetch_status=FetchStatus.FETCHED,
+                robots_status=RobotsStatus.ALLOWED,
+                content_type="text/html",
+                response_bytes=len(content),
+                content_hash=sha256_bytes(content),
+                cached_file_path=str(cache_path),
+            )
+        )
+    engine.dispose()
+    extracted = runner.invoke(
+        cli_with_settings,
+        ["program", "extract", "--job", str(job.id), "--source", str(source.id)],
+    )
+    assert extracted.exit_code == 0, extracted.stdout
+    assert "Review status: collected" in extracted.stdout
+    candidate_id = extracted.stdout.split("Candidate: ", 1)[1].splitlines()[0]
+    listed = runner.invoke(cli_with_settings, ["candidate", "list", "--job", str(job.id)])
+    assert listed.exit_code == 0
+    assert "Data Science" in listed.stdout
+    shown = runner.invoke(cli_with_settings, ["candidate", "show", candidate_id])
+    assert shown.exit_code == 0
+    assert "private=query" not in shown.stdout
+    assert "Evidence confidence" in shown.stdout
+    reported = runner.invoke(cli_with_settings, ["candidate", "report", candidate_id])
+    assert reported.exit_code == 0
+    assert "var" not in reported.stdout or "reports" in reported.stdout

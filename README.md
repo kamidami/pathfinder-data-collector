@@ -28,6 +28,10 @@ python -m pathfinder_collector job create --name germany-g1 --country DE --entit
 python -m pathfinder_collector job list
 python -m pathfinder_collector source fetch --job <job-uuid> --url https://example.edu/page --type official_program
 python -m pathfinder_collector source list --job <job-uuid>
+python -m pathfinder_collector program extract --job <job-uuid> --source <source-page-uuid>
+python -m pathfinder_collector candidate list --job <job-uuid>
+python -m pathfinder_collector candidate show <candidate-uuid>
+python -m pathfinder_collector candidate report <candidate-uuid>
 ```
 
 Configuration uses `PATHFINDER_COLLECTOR_` environment variables; copy `.env.example` for
@@ -48,3 +52,8 @@ their provenance. Required fields are deliberately left unspecified because head
 templates do not establish nullability. No programme discovery, structured field extraction,
 automated verification, web UI, Pathfinder database integration, or AI feature exists yet.
 Human approval remains mandatory before export.
+
+Deterministic programme extraction operates only on already-cached official HTML. It creates
+field-level evidence, surfaces conflicts, and produces an escaped local review report. See
+`docs/EXTRACTION_POLICY.md` and `docs/PROGRAMME_FIELD_MAPPING.md`. Discovery, JavaScript-rendered
+pages, PDFs, bulk crawling, and general university coverage remain out of scope.

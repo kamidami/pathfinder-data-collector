@@ -13,3 +13,8 @@ The `fetching` package separates URL safety, HTTP behavior, robots policy, rate 
 hashing, cache files, and result types. `FetchService` validates jobs and coordinates this layer
 with `SourcePageRepository`; the CLI contains no direct HTTP calls. Raw responses remain only in
 ignored runtime cache while bounded metadata is persisted in SQLite.
+
+The `extraction` package parses untrusted cached HTML without networking and separates metadata,
+label handling, normalization, evidence, confidence, and result models. The programme extraction
+service owns idempotent candidate/evidence/conflict persistence. Report generation reads these
+bounded records and writes escaped, script-free HTML under ignored runtime storage.

@@ -57,14 +57,23 @@ class JobModel(Base):
 
 class CandidateModel(Base):
     __tablename__ = "candidate_records"
-    __table_args__ = (Index("ix_candidates_entity_status", "entity_type", "review_status"),)
+    __table_args__ = (
+        Index("ix_candidates_entity_status", "entity_type", "review_status"),
+        Index("ux_candidates_job_source", "job_id", "source_page_id", unique=True),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     job_id: Mapped[str] = mapped_column(ForeignKey("collection_jobs.id", ondelete="CASCADE"))
+    source_page_id: Mapped[str | None] = mapped_column(
+        ForeignKey("source_pages.id", ondelete="CASCADE")
+    )
     entity_type: Mapped[str] = mapped_column(String(30))
     review_status: Mapped[str] = mapped_column(String(30))
     schema_version: Mapped[str] = mapped_column(String(30))
     normalized_data: Mapped[dict[str, Any]] = mapped_column(JSON)
+    extraction_version: Mapped[str | None] = mapped_column(String(30))
+    last_extracted_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    extraction_warnings: Mapped[list[str]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
 
@@ -108,9 +117,11 @@ class EvidenceModel(Base):
     source_page_id: Mapped[str] = mapped_column(ForeignKey("source_pages.id", ondelete="CASCADE"))
     field_name: Mapped[str] = mapped_column(String(100))
     extracted_value: Mapped[str] = mapped_column(Text)
+    normalized_value: Mapped[str | None] = mapped_column(Text)
     evidence_locator: Mapped[str | None] = mapped_column(String(500))
     short_evidence_text: Mapped[str | None] = mapped_column(String(500))
     confidence: Mapped[str] = mapped_column(String(20))
+    extraction_version: Mapped[str | None] = mapped_column(String(30), index=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
 
 
@@ -128,6 +139,7 @@ class ConflictModel(Base):
     resolved_value: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
     resolved_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    extraction_version: Mapped[str | None] = mapped_column(String(30), index=True)
 
 
 class ExportRunModel(Base):

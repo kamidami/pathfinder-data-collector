@@ -72,3 +72,21 @@ class ExportStatus(StrEnum):
     PENDING = "pending"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+class StudyMode(StrEnum):
+    FULL_TIME = "full_time"
+    PART_TIME = "part_time"
+    HYBRID = "hybrid"
+    ONLINE = "online"
+    UNKNOWN = "unknown"
+
+
+class ExtractionStatus(StrEnum):
+    EXTRACTED = "extracted"
+    PARTIAL = "partial"
+    NO_PROGRAMME_DATA = "no_programme_data"
+    UNSUPPORTED_SOURCE = "unsupported_source"
+    CACHE_MISSING = "cache_missing"
+    CACHE_CORRUPT = "cache_corrupt"
+    EXTRACTION_FAILED = "extraction_failed"
