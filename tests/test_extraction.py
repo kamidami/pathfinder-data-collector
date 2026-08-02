@@ -45,6 +45,7 @@ def test_controlled_normalizers() -> None:
     assert normalize_language("English / German") == "English and German"
     assert normalize_duration("2 years") == (2, "years", 4)
     assert normalize_duration("24 months") == (24, "months", None)
+    assert normalize_duration("P24M") == (4, "semesters", 4)
     assert normalize_study_mode("blended learning").value == "hybrid"
 
 
@@ -79,3 +80,16 @@ def test_malformed_html_is_bounded_and_country_is_not_inferred_from_domain() -> 
     assert output.programme_context
     assert values(output, "degree_level")
     assert values(output, "country_code") == []
+
+
+def test_generic_cards_inline_lines_adjacent_degree_and_institution_metadata() -> None:
+    output = extracted("programme_generic_cards.html")
+    assert values(output, "program_name") == ["Systems Engineering"]
+    assert "master" in values(output, "degree_level")
+    assert "Example University" in values(output, "university_name")
+    assert values(output, "country_code") == ["DE"]
+    assert "English" in values(output, "teaching_language")
+    assert "full_time" in values(output, "study_mode")
+    assert "Example City" in values(output, "city")
+    assert "4" in values(output, "duration_semesters")
+    assert values(output, "source_url") == ["https://example.test/programme"]

@@ -53,8 +53,8 @@ store metadata in collector-owned SQLite without storing raw HTML in database ro
 
 The v1 templates preserve Pathfinder's observed CSV headers and order. The manifest records
 their provenance. Required fields are deliberately left unspecified because header-only source
-templates do not establish nullability. No programme discovery, structured field extraction,
-automated verification, web UI, Pathfinder database integration, or AI feature exists yet.
+templates do not establish nullability. No programme discovery, automated verification, web UI,
+Pathfinder database integration, or AI feature exists.
 Human approval remains mandatory before export.
 
 Deterministic programme extraction operates only on already-cached official HTML. It creates
@@ -65,3 +65,6 @@ pages, PDFs, bulk crawling, and general university coverage remain out of scope.
 Explicit local review can approve, reject, or return candidates for review while preserving
 extraction evidence and append-only history. Only approved records can enter exact Pathfinder v1
 CSV export packages. See `docs/REVIEW_WORKFLOW.md` and `docs/PATHFINDER_EXPORT.md`.
+
+The controlled five-source Germany G1 exercise and its deliberately partial, zero-row approved
+export are documented in `docs/pilots/GERMANY_G1_PILOT.md`.

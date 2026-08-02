@@ -47,6 +47,7 @@ _LABEL_FIELDS = {
     "language": "teaching_language",
     "duration": "duration",
     "standard period of study": "duration",
+    "standard duration of studies": "duration",
     "location": "city",
     "campus": "city",
     "city": "city",
@@ -54,6 +55,7 @@ _LABEL_FIELDS = {
     "country code": "country_code",
     "study mode": "study_mode",
     "mode of study": "study_mode",
+    "type of study": "study_mode",
     "start semester": "intake",
     "intake": "intake",
     "field of study": "field_category",
@@ -61,6 +63,7 @@ _LABEL_FIELDS = {
     "application": "application_url",
     "application url": "application_url",
     "apply": "application_url",
+    "main locations": "city",
 }
 
 
@@ -99,14 +102,32 @@ class ProgrammeExtractor:
                     label="programme heading",
                 ),
             )
-            degree = normalize_degree(heading)
-            if degree:
+            heading_degree = normalize_degree(heading)
+            if not heading_degree:
+                degree_context = document.xpath(
+                    "(//h1)[1]/preceding-sibling::*[1] | (//h1)[1]/following-sibling::*[1]"
+                )
+                degree_text = " ".join(clean_text(item.text_content()) for item in degree_context)
+                contextual_degree = normalize_degree(degree_text)
+                if contextual_degree:
+                    _append(
+                        suggestions,
+                        suggestion(
+                            "degree_level",
+                            degree_text,
+                            contextual_degree,
+                            "h1[1]:adjacent-degree-context",
+                            ConfidenceLevel.MEDIUM,
+                            label="degree near programme heading",
+                        ),
+                    )
+            if heading_degree:
                 _append(
                     suggestions,
                     suggestion(
                         "degree_level",
                         heading,
-                        degree,
+                        heading_degree,
                         "h1[1]:controlled-degree-token",
                         ConfidenceLevel.MEDIUM,
                         label="degree in programme heading",
@@ -129,6 +150,7 @@ class ProgrammeExtractor:
             suggestions.extend(_label_suggestions(field, item.value, item.locator, source_url))
 
         candidate_source = urljoin(source_url, canonical) if canonical else source_url
+        candidate_source = candidate_source.split("?", 1)[0]
         effective_source = (
             candidate_source if candidate_source.startswith(("http://", "https://")) else source_url
         )
@@ -188,6 +210,9 @@ def normalize_duration(value: str) -> tuple[int, str, int | None] | None:
     if iso:
         number = int(iso.group(1))
         unit = "years" if iso.group(2) == "y" else "months"
+        if unit == "months" and number % 6 == 0:
+            semesters = number // 6
+            return semesters, "semesters", semesters
         return number, unit, number * 2 if unit == "years" else None
     match = re.search(
         r"\b(\d+|one|two|three|four|five|six)\s+(semester|semesters|year|years|month|months)\b",

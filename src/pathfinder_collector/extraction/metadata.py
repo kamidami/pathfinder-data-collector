@@ -52,6 +52,20 @@ def metadata_suggestions(document: HtmlElement) -> tuple[list[FieldSuggestion], 
                     item.get("timeToComplete"),
                     f"JSON-LD[{index}].timeToComplete",
                 )
+            if types & {
+                "collegeoruniversity",
+                "educationalorganization",
+                "researchorganization",
+            }:
+                _add(values, "university_name", item.get("name"), f"JSON-LD[{index}].name")
+                address = item.get("address")
+                if isinstance(address, dict):
+                    _add(
+                        values,
+                        "country_code",
+                        address.get("addressCountry"),
+                        f"JSON-LD[{index}].address.addressCountry",
+                    )
     site_name = _meta(document, "property", "og:site_name")
     if site_name:
         item = suggestion(
@@ -61,6 +75,12 @@ def metadata_suggestions(document: HtmlElement) -> tuple[list[FieldSuggestion], 
             "meta[property='og:site_name']",
             ConfidenceLevel.MEDIUM,
         )
+        if item:
+            values.append(item)
+    institution = _institution_metadata(document)
+    if institution:
+        value, locator = institution
+        item = suggestion("university_name", value, value, locator, ConfidenceLevel.MEDIUM)
         if item:
             values.append(item)
     return values, warnings, programme_context
@@ -88,6 +108,26 @@ def _meta(document: HtmlElement, attribute: str, name: str) -> str | None:
         f"//meta[translate(@{attribute}, '{uppercase}', '{lowercase}')='{name.lower()}']/@content"
     )
     return clean_text(values[0]) if values else None
+
+
+def _institution_metadata(document: HtmlElement) -> tuple[str, str] | None:
+    author = _meta(document, "name", "author")
+    if author and _looks_like_institution(author):
+        return author, "meta[name='author']"
+    title = metadata_title(document)
+    if title:
+        for segment in reversed([clean_text(item) for item in title.split("|")]):
+            if _looks_like_institution(segment):
+                return segment, "metadata:title:institution-segment"
+    publisher = _meta(document, "name", "publisher")
+    if publisher and _looks_like_institution(publisher):
+        return publisher, "meta[name='publisher']"
+    return None
+
+
+def _looks_like_institution(value: str) -> bool:
+    lowered = value.casefold()
+    return any(token in lowered for token in ("university", "universität", "universitaet"))
 
 
 def _objects(value: object) -> Iterator[dict[str, object]]:
