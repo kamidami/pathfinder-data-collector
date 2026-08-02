@@ -21,5 +21,7 @@ class CandidateRecord(BaseModel):
     extraction_version: str | None = Field(default=None, max_length=30)
     last_extracted_at: datetime | None = None
     extraction_warnings: list[str] = Field(default_factory=list)
+    reviewer_overrides: dict[str, str] = Field(default_factory=dict)
+    approved_at: datetime | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)

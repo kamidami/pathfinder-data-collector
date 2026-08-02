@@ -18,3 +18,7 @@ The `extraction` package parses untrusted cached HTML without networking and sep
 label handling, normalization, evidence, confidence, and result models. The programme extraction
 service owns idempotent candidate/evidence/conflict persistence. Report generation reads these
 bounded records and writes escaped, script-free HTML under ignored runtime storage.
+
+Human review is a transactional service boundary with append-only decisions and separately stored
+overrides. Export validation maps effective approved programme values into copied Pathfinder v1
+contracts, writes atomic ignored packages, and records immutable run/file/candidate history.

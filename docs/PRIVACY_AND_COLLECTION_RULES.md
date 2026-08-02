@@ -22,3 +22,7 @@
   bounded evidence excerpts rather than page sections.
 - Never infer teaching language from page language, country from a domain, or programme location
   from an unrelated address. Missing or conflicting values require human review.
+- Reviewer labels are short local operator labels, not accounts or email identities. Review notes
+  and override files are bounded, and exported files contain no cache paths or evidence excerpts.
+- Human approval is not official verification. Exports must never label automatically collected
+  records as verified or write directly into Pathfinder storage.

@@ -237,6 +237,8 @@ class CandidateRepository:
             "extraction_version": candidate.extraction_version,
             "last_extracted_at": candidate.last_extracted_at,
             "extraction_warnings": candidate.extraction_warnings,
+            "reviewer_overrides": candidate.reviewer_overrides,
+            "approved_at": candidate.approved_at,
             "updated_at": candidate.updated_at,
         }
         for name, value in values.items():
@@ -257,6 +259,8 @@ class CandidateRepository:
             extraction_version=row.extraction_version,
             last_extracted_at=row.last_extracted_at,
             extraction_warnings=row.extraction_warnings or [],
+            reviewer_overrides=row.reviewer_overrides or {},
+            approved_at=row.approved_at,
             created_at=row.created_at,
             updated_at=row.updated_at,
         )

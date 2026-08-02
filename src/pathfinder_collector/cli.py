@@ -1,4 +1,6 @@
+import json
 import platform
+from pathlib import Path
 from uuid import UUID
 
 import typer
@@ -16,7 +18,7 @@ from pathfinder_collector.database import (
     session_scope,
 )
 from pathfinder_collector.domain.jobs import CollectionJob
-from pathfinder_collector.enums import EntityType, SourceType
+from pathfinder_collector.enums import EntityType, ReviewDecision, SourceType
 from pathfinder_collector.exceptions import ContractError
 from pathfinder_collector.fetching.client import SafeHttpClient
 from pathfinder_collector.persistence.repositories import (
@@ -25,6 +27,10 @@ from pathfinder_collector.persistence.repositories import (
     JobRepository,
     SourcePageRepository,
 )
+from pathfinder_collector.services.exporting import (
+    PathfinderExportService,
+    duplicate_candidate_groups,
+)
 from pathfinder_collector.services.extraction import (
     SUPPORTED_FIELDS,
     ProgrammeExtractionService,
@@ -32,6 +38,7 @@ from pathfinder_collector.services.extraction import (
 from pathfinder_collector.services.fetching import FetchService
 from pathfinder_collector.services.jobs import create_job
 from pathfinder_collector.services.reports import CandidateReportService
+from pathfinder_collector.services.review import CandidateReviewService
 
 app = typer.Typer(help="Evidence-backed university data collector.", no_args_is_help=True)
 contract_app = typer.Typer(help="Inspect versioned Pathfinder CSV contracts.")
@@ -39,11 +46,13 @@ job_app = typer.Typer(help="Manage collection jobs.")
 source_app = typer.Typer(help="Safely fetch and inspect official public sources.")
 program_app = typer.Typer(help="Extract programme fields from fetched HTML.")
 candidate_app = typer.Typer(help="Review extracted candidates and evidence.")
+export_app = typer.Typer(help="Export explicitly approved records to Pathfinder v1 CSV.")
 app.add_typer(contract_app, name="contract")
 app.add_typer(job_app, name="job")
 app.add_typer(source_app, name="source")
 app.add_typer(program_app, name="program")
 app.add_typer(candidate_app, name="candidate")
+app.add_typer(export_app, name="export")
 
 
 def settings() -> Settings:
@@ -331,6 +340,219 @@ def candidate_report(candidate_id: UUID) -> None:
     finally:
         engine.dispose()
     typer.echo(f"Report: {path.relative_to(config.project_root)}")
+
+
+@candidate_app.command("review")
+def candidate_review(
+    candidate_id: UUID,
+    decision: ReviewDecision = typer.Option(..., help="Explicit human decision."),
+    reviewer: str = typer.Option(..., help="Short local operator label."),
+    notes: str | None = typer.Option(None, help="Bounded plain-text review note."),
+    overrides: Path | None = typer.Option(None, help="Local JSON field override file."),
+    acknowledge_warnings: bool = typer.Option(False, help="Acknowledge non-blocking warnings."),
+) -> None:
+    config = settings()
+    override_values = _load_override_file(overrides, config) if overrides else {}
+    engine = create_collector_engine(config.database_url)
+    try:
+        with session_scope(engine) as session:
+            review = CandidateReviewService(session).review_candidate(
+                candidate_id,
+                decision,
+                reviewer,
+                override_values,
+                notes,
+                acknowledge_warnings,
+            )
+    except ValueError as exc:
+        typer.echo(f"Review rejected: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    finally:
+        engine.dispose()
+    typer.echo(f"Decision: {review.decision.value}")
+    typer.echo(f"Candidate: {review.candidate_id}")
+    typer.echo(f"Resulting status: {review.resulting_status.value}")
+    typer.echo(f"Changed fields: {', '.join(review.field_overrides) or 'none'}")
+
+
+@candidate_app.command("history")
+def candidate_history(candidate_id: UUID) -> None:
+    config = settings()
+    engine = create_collector_engine(config.database_url)
+    try:
+        with session_scope(engine) as session:
+            history = CandidateReviewService(session).history(candidate_id)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    finally:
+        engine.dispose()
+    if not history:
+        typer.echo("No review history.")
+        return
+    for item in history:
+        fields = ",".join(item.field_overrides) or "-"
+        typer.echo(
+            f"{item.reviewed_at.isoformat()}  {item.decision.value:<16}  "
+            f"{item.reviewer_label:<12}  {item.resulting_status.value:<12}  "
+            f"fields={fields}  notes={item.review_notes or '-'}"
+        )
+
+
+@candidate_app.command("duplicates")
+def candidate_duplicates(job: UUID = typer.Option(..., help="Collection job UUID.")) -> None:
+    from sqlalchemy import select
+
+    from pathfinder_collector.persistence.models import CandidateModel
+
+    config = settings()
+    engine = create_collector_engine(config.database_url)
+    try:
+        with session_scope(engine) as session:
+            if not JobRepository(session).exists(job):
+                raise ValueError("collection job does not exist")
+            candidates = list(
+                session.scalars(
+                    select(CandidateModel).where(CandidateModel.job_id == str(job))
+                ).all()
+            )
+            groups = duplicate_candidate_groups(candidates)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    finally:
+        engine.dispose()
+    if not groups:
+        typer.echo("No exact programme duplicates.")
+        return
+    for index, group in enumerate(groups, start=1):
+        typer.echo(f"Duplicate group {index}: {', '.join(item.id for item in group)}")
+
+
+@candidate_app.command("review-interactive")
+def candidate_review_interactive(candidate_id: UUID) -> None:
+    config = settings()
+    engine = create_collector_engine(config.database_url)
+    try:
+        with session_scope(engine) as session:
+            candidate = CandidateRepository(session).get(candidate_id)
+            if candidate is None:
+                raise ValueError("candidate does not exist")
+            evidence_repo = ExtractionEvidenceRepository(session)
+            conflicts = evidence_repo.conflicts_for(candidate_id)
+            evidence = evidence_repo.evidence_for(candidate_id)
+        effective = {**candidate.normalized_data, **candidate.reviewer_overrides}
+        typer.echo(f"Candidate {candidate.id} ({candidate.review_status.value})")
+        for key, value in sorted(effective.items()):
+            typer.echo(f"  {key}: {value}")
+        typer.echo(f"Conflicts: {', '.join(item.field_name for item in conflicts) or '-'}")
+        for item in evidence[:30]:
+            typer.echo(
+                f"  evidence {item.field_name} [{item.confidence.value}]: "
+                f"{item.short_evidence_text}"
+            )
+        decision = ReviewDecision(typer.prompt("Decision (approve/reject/return_to_review)"))
+        reviewer = typer.prompt("Reviewer label")
+        notes = typer.prompt("Review notes (optional)", default="", show_default=False)
+        raw = typer.prompt("Override JSON object (optional)", default="{}", show_default=False)
+        if len(raw.encode("utf-8")) > 64 * 1024:
+            raise ValueError("override JSON is too large")
+        parsed = json.loads(raw)
+        if not isinstance(parsed, dict):
+            raise ValueError("override JSON must be an object")
+        acknowledge = False
+        if candidate.extraction_warnings:
+            acknowledge = typer.confirm("Acknowledge extraction warnings?", default=False)
+        if decision is ReviewDecision.APPROVE and not typer.confirm(
+            "Confirm explicit human approval?", default=False
+        ):
+            typer.echo("Cancelled; no changes saved.")
+            return
+        with session_scope(engine) as session:
+            review = CandidateReviewService(session).review_candidate(
+                candidate_id, decision, reviewer, parsed, notes, acknowledge
+            )
+        typer.echo(f"Saved {review.decision.value}; status={review.resulting_status.value}")
+    except (ValueError, json.JSONDecodeError) as exc:
+        typer.echo(f"Interactive review cancelled: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    except (KeyboardInterrupt, typer.Abort):
+        typer.echo("Cancelled; no changes saved.")
+        raise typer.Exit(1) from None
+    finally:
+        engine.dispose()
+
+
+@export_app.command("programs")
+def export_programs(
+    job: UUID | None = typer.Option(None, help="Collection job UUID."),
+    candidate: list[UUID] | None = typer.Option(None, help="Candidate UUID; repeatable."),
+    name: str | None = typer.Option(None, help="Safe descriptive export label."),
+    dry_run: bool = typer.Option(False, help="Validate without files or state changes."),
+) -> None:
+    config = settings()
+    engine = create_collector_engine(config.database_url)
+    try:
+        with session_scope(engine) as session:
+            result = PathfinderExportService(config, session).export_programs(
+                candidate_ids=candidate, job_id=job, output_name=name, dry_run=dry_run
+            )
+    except ValueError as exc:
+        typer.echo(f"Export rejected: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    finally:
+        engine.dispose()
+    typer.echo(f"Export run: {result.export_run_id}")
+    typer.echo(f"Approved selected: {result.approved_selected}")
+    typer.echo(f"Exported: {result.exported_count}  Skipped: {result.skipped_count}")
+    for warning in result.warnings:
+        typer.echo(f"Warning: {warning}")
+    for error in result.errors:
+        typer.echo(f"Error: {error}")
+    if result.export_directory:
+        typer.echo(f"Directory: {result.export_directory.relative_to(config.project_root)}")
+    for filename, digest in sorted(result.file_hashes.items()):
+        typer.echo(f"{filename}: {digest}")
+    if result.errors:
+        raise typer.Exit(2)
+
+
+@export_app.command("show")
+def export_show(export_run_id: UUID) -> None:
+    config = settings()
+    engine = create_collector_engine(config.database_url)
+    try:
+        with session_scope(engine) as session:
+            run, files = PathfinderExportService(config, session).show(export_run_id)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    finally:
+        engine.dispose()
+    typer.echo(f"Export run: {run.id}")
+    typer.echo(f"Status: {run.status}  Records: {run.record_count}")
+    typer.echo(f"Directory: {run.export_path}")
+    for item in files:
+        typer.echo(f"{item.filename}: {item.sha256}")
+
+
+def _load_override_file(path: Path, config: Settings) -> dict[str, object]:
+    resolved = path.resolve()
+    try:
+        resolved.relative_to(config.project_root)
+    except ValueError as exc:
+        raise typer.BadParameter("override file must be within the project directory") from exc
+    if resolved.suffix.lower() != ".json" or not resolved.is_file():
+        raise typer.BadParameter("override file must be an existing JSON file")
+    if resolved.stat().st_size > 64 * 1024:
+        raise typer.BadParameter("override JSON exceeds 64 KiB")
+    try:
+        payload = json.loads(resolved.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise typer.BadParameter("override file is not valid UTF-8 JSON") from exc
+    if not isinstance(payload, dict):
+        raise typer.BadParameter("override JSON must contain one object")
+    return payload
 
 
 def _validation_message(exc: ValidationError) -> str:

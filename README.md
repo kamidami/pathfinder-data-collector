@@ -32,6 +32,10 @@ python -m pathfinder_collector program extract --job <job-uuid> --source <source
 python -m pathfinder_collector candidate list --job <job-uuid>
 python -m pathfinder_collector candidate show <candidate-uuid>
 python -m pathfinder_collector candidate report <candidate-uuid>
+python -m pathfinder_collector candidate review <candidate-uuid> --decision approve --reviewer local-1
+python -m pathfinder_collector candidate history <candidate-uuid>
+python -m pathfinder_collector candidate duplicates --job <job-uuid>
+python -m pathfinder_collector export programs --job <job-uuid> --dry-run
 ```
 
 Configuration uses `PATHFINDER_COLLECTOR_` environment variables; copy `.env.example` for
@@ -57,3 +61,7 @@ Deterministic programme extraction operates only on already-cached official HTML
 field-level evidence, surfaces conflicts, and produces an escaped local review report. See
 `docs/EXTRACTION_POLICY.md` and `docs/PROGRAMME_FIELD_MAPPING.md`. Discovery, JavaScript-rendered
 pages, PDFs, bulk crawling, and general university coverage remain out of scope.
+
+Explicit local review can approve, reject, or return candidates for review while preserving
+extraction evidence and append-only history. Only approved records can enter exact Pathfinder v1
+CSV export packages. See `docs/REVIEW_WORKFLOW.md` and `docs/PATHFINDER_EXPORT.md`.

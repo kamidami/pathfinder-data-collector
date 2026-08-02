@@ -74,6 +74,8 @@ class CandidateModel(Base):
     extraction_version: Mapped[str | None] = mapped_column(String(30))
     last_extracted_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     extraction_warnings: Mapped[list[str]] = mapped_column(JSON, default=list)
+    reviewer_overrides: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)
+    approved_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
 
@@ -153,6 +155,47 @@ class ExportRunModel(Base):
     status: Mapped[str] = mapped_column(String(20))
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
     completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+
+class CandidateReviewModel(Base):
+    __tablename__ = "candidate_reviews"
+    __table_args__ = (Index("ix_candidate_reviews_candidate_time", "candidate_id", "reviewed_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    candidate_id: Mapped[str] = mapped_column(
+        ForeignKey("candidate_records.id", ondelete="CASCADE")
+    )
+    reviewer_label: Mapped[str] = mapped_column(String(50))
+    decision: Mapped[str] = mapped_column(String(30))
+    review_notes: Mapped[str | None] = mapped_column(String(1000))
+    reviewed_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+    field_overrides: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)
+    acknowledged_warnings: Mapped[bool] = mapped_column(Boolean, default=False)
+    original_status: Mapped[str] = mapped_column(String(30))
+    resulting_status: Mapped[str] = mapped_column(String(30))
+
+
+class ExportFileModel(Base):
+    __tablename__ = "export_files"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    export_run_id: Mapped[str] = mapped_column(ForeignKey("export_runs.id", ondelete="CASCADE"))
+    filename: Mapped[str] = mapped_column(String(100))
+    sha256: Mapped[str] = mapped_column(String(64))
+    record_count: Mapped[int] = mapped_column(Integer)
+
+
+class ExportCandidateModel(Base):
+    __tablename__ = "export_candidates"
+    __table_args__ = (
+        Index("ux_export_candidates_run_candidate", "export_run_id", "candidate_id", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    export_run_id: Mapped[str] = mapped_column(ForeignKey("export_runs.id", ondelete="CASCADE"))
+    candidate_id: Mapped[str] = mapped_column(
+        ForeignKey("candidate_records.id", ondelete="RESTRICT")
+    )
 
 
 def uuid_string(value: UUID) -> str:

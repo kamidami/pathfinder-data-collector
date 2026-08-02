@@ -20,6 +20,11 @@ The deterministic extractor supports only the following initial fields.
 has no exact columns for them. They remain in normalized candidate data and evidence but are not
 invented as CSV columns.
 
+Reviewer overrides take precedence only in effective approved/export values and remain stored
+separately from extraction. `teaching_language` maps to `language`; duration value and unit map to
+`duration`. Source retrieval/approval date maps to the contract's available date field, without
+claiming official verification. `source_confidence` is `high` for the reviewed official source,
+while `data_status` remains conservatively `collected`, never `verified`.
+
 Tuition, deadlines, requirements, test scores, documents, scholarships, and unlisted fields are
 unsupported in this phase and remain blank. Missing values are never guessed.
-

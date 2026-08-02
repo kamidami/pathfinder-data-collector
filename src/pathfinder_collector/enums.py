@@ -90,3 +90,9 @@ class ExtractionStatus(StrEnum):
     CACHE_MISSING = "cache_missing"
     CACHE_CORRUPT = "cache_corrupt"
     EXTRACTION_FAILED = "extraction_failed"
+
+
+class ReviewDecision(StrEnum):
+    APPROVE = "approve"
+    REJECT = "reject"
+    RETURN_TO_REVIEW = "return_to_review"
