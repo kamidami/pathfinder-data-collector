@@ -1,0 +1,3 @@
+source_url,expected_university_name,expected_program_name,operator_notes
+https://university.example.invalid/programmes/data-science,Example University,Data Science,Check the official programme title
+https://institute.example.invalid/study/computer-science,Example Institute,Computer Science,

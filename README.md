@@ -64,6 +64,18 @@ programme discovery, automated verification, web UI,
 Pathfinder database integration, or AI feature exists.
 Human approval remains mandatory before export.
 
+## Guided batch collection
+
+Collect a validated CSV of official programme URLs sequentially with:
+
+```powershell
+python -m pathfinder_collector batch collect --job-id <JOB_UUID> --file .\batch.csv
+```
+
+See `docs/BATCH_COLLECTION.md` and `docs/examples/programme_batch.csv` for the input schema,
+idempotency rules, result statuses, and runtime reports. The workflow reuses safe fetching and
+evidence-backed extraction; it never bypasses robots/access restrictions or grants approval.
+
 Deterministic programme extraction operates only on already-cached official HTML. It creates
 field-level evidence, surfaces conflicts, and produces an escaped local review report. See
 `docs/EXTRACTION_POLICY.md` and `docs/PROGRAMME_FIELD_MAPPING.md`. Discovery, JavaScript-rendered

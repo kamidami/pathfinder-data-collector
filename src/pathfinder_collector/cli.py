@@ -28,6 +28,7 @@ from pathfinder_collector.persistence.repositories import (
     JobRepository,
     SourcePageRepository,
 )
+from pathfinder_collector.services.batch import BatchCollectionService, BatchValidationError
 from pathfinder_collector.services.exporting import (
     PathfinderExportService,
     duplicate_candidate_groups,
@@ -48,12 +49,69 @@ source_app = typer.Typer(help="Safely fetch and inspect official public sources.
 program_app = typer.Typer(help="Extract programme fields from fetched HTML.")
 candidate_app = typer.Typer(help="Review extracted candidates and evidence.")
 export_app = typer.Typer(help="Export explicitly approved records to Pathfinder v1 CSV.")
+batch_app = typer.Typer(help="Collect a validated batch of official programme URLs.")
 app.add_typer(contract_app, name="contract")
 app.add_typer(job_app, name="job")
 app.add_typer(source_app, name="source")
 app.add_typer(program_app, name="program")
 app.add_typer(candidate_app, name="candidate")
 app.add_typer(export_app, name="export")
+app.add_typer(batch_app, name="batch")
+
+
+@batch_app.command("collect")
+def batch_collect(
+    job_id: UUID = typer.Option(..., "--job-id", help="Existing programme collection job UUID."),
+    file: Path = typer.Option(..., "--file", exists=True, dir_okay=False, readable=True),
+) -> None:
+    config = settings()
+    engine = create_collector_engine(config.database_url)
+    client = fetch_client(config)
+    try:
+        with session_scope(engine) as session:
+            jobs = JobRepository(session)
+            sources = SourcePageRepository(session)
+            candidates = CandidateRepository(session)
+            result = BatchCollectionService(
+                config,
+                jobs,
+                sources,
+                candidates,
+                FetchService(config, jobs, sources, client),
+                ProgrammeExtractionService(
+                    jobs,
+                    sources,
+                    candidates,
+                    ExtractionEvidenceRepository(session),
+                ),
+            ).collect(job_id, file.resolve())
+    except BatchValidationError as exc:
+        for error in exc.errors:
+            typer.echo(f"Batch rejected: {error}", err=True)
+        raise typer.Exit(2) from exc
+    finally:
+        client.close()
+        engine.dispose()
+    typer.echo(f"Batch run: {result.batch_run_id}")
+    typer.echo(f"Job: {result.job_id}")
+    typer.echo(
+        f"Input rows: {result.input_row_count}  Unique: {result.valid_unique_urls}  "
+        f"Duplicates: {result.duplicate_input_urls}  Existing: {result.already_existing_urls}"
+    )
+    typer.echo(
+        f"Fetches: {result.successful_fetches}  Cache hits: {result.cache_hits}  "
+        f"Extractions: {result.extraction_successes}"
+    )
+    typer.echo(
+        f"Candidates created: {result.candidates_created}  Reused: {result.candidates_reused}  "
+        f"Needs review: {result.needs_review_count}"
+    )
+    typer.echo(
+        f"Robots blocked: {result.robots_blocked_count}  Access failures: "
+        f"{result.http_access_failures}  Validation failures: {result.validation_failures}  "
+        f"Controlled failures: {result.controlled_failures}"
+    )
+    typer.echo(f"Reports: {result.report_directory.relative_to(config.project_root)}")
 
 
 def settings() -> Settings:
