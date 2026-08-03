@@ -3,7 +3,7 @@ import io
 import json
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import SplitResult, urlsplit, urlunsplit
+from urllib.parse import SplitResult, parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -149,7 +149,17 @@ def canonicalize_url(value: str) -> str:
     host = parts.hostname.rstrip(".").lower()
     default_port = (scheme == "http" and port == 80) or (scheme == "https" and port == 443)
     netloc = host if port is None or default_port else f"{host}:{port}"
-    return urlunsplit(SplitResult(scheme, netloc, parts.path or "/", parts.query, ""))
+    path = parts.path or "/"
+    if path != "/":
+        path = path.rstrip("/")
+    query = urlencode(
+        sorted(
+            (key, item)
+            for key, item in parse_qsl(parts.query, keep_blank_values=True)
+            if not key.casefold().startswith("utm_") and key.casefold() not in {"fbclid", "gclid"}
+        )
+    )
+    return urlunsplit(SplitResult(scheme, netloc, path, query, ""))
 
 
 class BatchCollectionService:

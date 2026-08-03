@@ -67,6 +67,21 @@ class RobotsChecker:
             return RobotsStatus.INVALID
         return RobotsStatus.ALLOWED if allowed else RobotsStatus.DISALLOWED
 
+    def sitemap_urls(self, target: SafeUrl) -> list[str]:
+        """Return bounded Sitemap declarations from the safely cached robots file."""
+        self.check(target)
+        content = self._cached(self.cache.robots_path(target.origin))
+        if content is None:
+            return []
+        result: list[str] = []
+        for line in content.decode("utf-8", errors="replace").splitlines():
+            name, separator, value = line.partition(":")
+            if separator and name.strip().casefold() == "sitemap" and value.strip():
+                result.append(value.strip())
+            if len(result) >= 20:
+                break
+        return result
+
     def _cached(self, path: object) -> bytes | None:
         try:
             cache_path = path

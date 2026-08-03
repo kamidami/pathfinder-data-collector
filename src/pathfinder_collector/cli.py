@@ -29,6 +29,7 @@ from pathfinder_collector.persistence.repositories import (
     SourcePageRepository,
 )
 from pathfinder_collector.services.batch import BatchCollectionService, BatchValidationError
+from pathfinder_collector.services.discovery import ProgrammeDiscoveryService
 from pathfinder_collector.services.exporting import (
     PathfinderExportService,
     duplicate_candidate_groups,
@@ -50,6 +51,7 @@ program_app = typer.Typer(help="Extract programme fields from fetched HTML.")
 candidate_app = typer.Typer(help="Review extracted candidates and evidence.")
 export_app = typer.Typer(help="Export explicitly approved records to Pathfinder v1 CSV.")
 batch_app = typer.Typer(help="Collect a validated batch of official programme URLs.")
+discover_app = typer.Typer(help="Discover official programme URLs from institution seeds.")
 app.add_typer(contract_app, name="contract")
 app.add_typer(job_app, name="job")
 app.add_typer(source_app, name="source")
@@ -57,6 +59,60 @@ app.add_typer(program_app, name="program")
 app.add_typer(candidate_app, name="candidate")
 app.add_typer(export_app, name="export")
 app.add_typer(batch_app, name="batch")
+app.add_typer(discover_app, name="discover")
+
+
+@discover_app.command("programs")
+def discover_programs(
+    job_id: UUID = typer.Option(..., "--job-id", help="Existing programme collection job UUID."),
+    seeds: Path = typer.Option(..., "--seeds", exists=True, dir_okay=False, readable=True),
+    target: int = typer.Option(50, "--target", min=1, max=10000),
+) -> None:
+    config = settings()
+    engine = create_collector_engine(config.database_url)
+    client = fetch_client(config)
+    try:
+        with session_scope(engine) as session:
+            jobs = JobRepository(session)
+            sources = SourcePageRepository(session)
+            result = ProgrammeDiscoveryService(
+                config,
+                jobs,
+                sources,
+                FetchService(config, jobs, sources, client),
+                client,
+            ).discover(job_id, seeds.resolve(), target)
+    except BatchValidationError as exc:
+        for error in exc.errors:
+            typer.echo(f"Discovery rejected: {error}", err=True)
+        raise typer.Exit(2) from exc
+    finally:
+        client.close()
+        engine.dispose()
+    typer.echo(f"Discovery run: {result.discovery_run_id}")
+    typer.echo(f"Job: {result.job_id}")
+    typer.echo(
+        f"Seed rows: {result.seed_rows}  Unique domains: {result.valid_unique_domains}  "
+        f"Domains processed: {result.domains_processed}"
+    )
+    typer.echo(
+        f"Sitemaps checked: {result.sitemap_urls_checked}  Catalogues checked: "
+        f"{result.catalogue_pages_checked}  Pages fetched: {result.pages_fetched}  "
+        f"Cache hits: {result.cache_hits}"
+    )
+    typer.echo(
+        f"Raw links: {result.raw_links_found}  Candidates: {result.programme_url_candidates}  "
+        f"Duplicates: {result.duplicate_urls}  Existing: {result.already_existing_job_urls}"
+    )
+    typer.echo(
+        f"Robots blocked: {result.robots_blocked}  Access failures: {result.access_failures}  "
+        f"Controlled failures: {result.controlled_failures}"
+    )
+    typer.echo(
+        f"Target: {result.target_requested}  Reached: {'yes' if result.target_reached else 'no'}"
+    )
+    output = result.output_directory / "discovered_programmes.csv"
+    typer.echo(f"Output CSV: {output.relative_to(config.project_root)}")
 
 
 @batch_app.command("collect")

@@ -44,7 +44,10 @@ class SafeHttpClient:
             pool=settings.connect_timeout_seconds,
         )
         self.http = httpx.Client(
-            headers={"User-Agent": settings.user_agent, "Accept": "text/html,text/plain"},
+            headers={
+                "User-Agent": settings.user_agent,
+                "Accept": "text/html,application/xhtml+xml,application/xml,text/xml,text/plain",
+            },
             timeout=timeout,
             follow_redirects=False,
             transport=transport,

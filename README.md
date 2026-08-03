@@ -76,6 +76,20 @@ See `docs/BATCH_COLLECTION.md` and `docs/examples/programme_batch.csv` for the i
 idempotency rules, result statuses, and runtime reports. The workflow reuses safe fetching and
 evidence-backed extraction; it never bypasses robots/access restrictions or grants approval.
 
+## Official programme discovery
+
+Discover up to a bounded target of programme URL candidates from operator-provided official
+institution domains:
+
+```powershell
+python -m pathfinder_collector discover programs --job-id <PROGRAM_JOB_UUID> --seeds .\seeds.csv --target 50
+```
+
+Discovery checks official sitemaps, robots declarations, catalogues, and a bounded same-origin
+crawl. It uses deterministic signals and produces a CSV directly compatible with `batch collect`.
+See `docs/PROGRAMME_DISCOVERY.md` and `docs/examples/programme_discovery_seeds.csv`. Discovery is
+not verification and never provides automatic approval, export, import, or search-engine scraping.
+
 Deterministic programme extraction operates only on already-cached official HTML. It creates
 field-level evidence, surfaces conflicts, and produces an escaped local review report. See
 `docs/EXTRACTION_POLICY.md` and `docs/PROGRAMME_FIELD_MAPPING.md`. Discovery, JavaScript-rendered

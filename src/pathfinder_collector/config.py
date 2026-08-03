@@ -32,7 +32,15 @@ class Settings(BaseSettings):
     min_host_delay_seconds: float = Field(default=1.0, ge=0, le=60)
     cache_ttl_hours: float = Field(default=24, gt=0, le=24 * 30)
     robots_cache_ttl_hours: float = Field(default=24, gt=0, le=24 * 30)
-    allowed_content_types: str = "text/html,text/plain,application/xhtml+xml"
+    allowed_content_types: str = (
+        "text/html,text/plain,application/xhtml+xml,application/xml,text/xml,"
+        "application/gzip,application/x-gzip"
+    )
+    discovery_max_pages_per_domain: int = Field(default=20, ge=1, le=200)
+    discovery_max_crawl_depth: int = Field(default=2, ge=0, le=5)
+    discovery_max_links: int = Field(default=1000, ge=1, le=10000)
+    discovery_max_sitemaps: int = Field(default=25, ge=1, le=100)
+    discovery_max_sitemap_depth: int = Field(default=2, ge=0, le=5)
 
     _path_fields: ClassVar[tuple[str, ...]] = ("export_dir", "cache_dir", "report_dir")
 
